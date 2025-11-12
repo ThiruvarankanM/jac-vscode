@@ -16,8 +16,30 @@ export function registerAllCommands(context: vscode.ExtensionContext, envManager
         })
     );
     context.subscriptions.push(
-        vscode.commands.registerCommand(COMMANDS.CHECK_FILE, () => {
-            runJacCommandForCurrentFile('check', envManager);
+        vscode.commands.registerCommand(COMMANDS.DEBUG_FILE, async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'jac') {
+                vscode.window.showErrorMessage('Please open a Jac file to debug.');
+                return;
+            }
+
+            // Open the visual debugger webview
+            await vscode.commands.executeCommand(COMMANDS.VISUALIZE);
+
+            // Start debugging with dynamic configuration
+            await vscode.debug.startDebugging(
+                vscode.workspace.getWorkspaceFolder(editor.document.uri),
+                {
+                    type: 'debugpy',
+                    request: 'launch',
+                    name: 'Jac: Debug Current File',
+                    python: envManager.getPythonPath(),
+                    program: envManager.getJacPath(),
+                    args: ['run', editor.document.uri.fsPath],
+                    console: 'integratedTerminal',
+                    justMyCode: true
+                }
+            );
         })
     );
     context.subscriptions.push(
@@ -29,6 +51,12 @@ export function registerAllCommands(context: vscode.ExtensionContext, envManager
         vscode.commands.registerCommand(COMMANDS.GET_JAC_PATH, () => {
             // Use envManager to get the selected jac path
             return envManager.getJacPath();
+        })
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand(COMMANDS.GET_PYTHON_PATH, () => {
+            // Use envManager to get the Python path from same environment as Jac
+            return envManager.getPythonPath();
         })
     );
     context.subscriptions.push(
