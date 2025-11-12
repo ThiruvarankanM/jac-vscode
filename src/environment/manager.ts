@@ -53,6 +53,17 @@ export class EnvManager {
         return process.platform === 'win32' ? 'jac.exe' : 'jac';
     }
 
+    getPythonPath(): string {
+        if (this.jacPath) {
+            // Convert jac path to python path (same directory)
+            const jacDir = path.dirname(this.jacPath);
+            const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python';
+            return path.join(jacDir, pythonExecutable);
+        }
+        // Fallback: try to find python in PATH
+        return process.platform === 'win32' ? 'python.exe' : 'python';
+    }
+
     async promptEnvironmentSelection() {
         try {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();

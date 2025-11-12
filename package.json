@@ -44,29 +44,14 @@
         }
       }
     },
-    "debuggers": [
-      {
-        "type": "jacdebug",
-        "label": "Jac Debug",
-        "initialConfigurations": [
-          {
-            "type": "debugpy",
-            "request": "launch",
-            "name": "Run a jac file",
-            "program": "${command:extension.jaclang-extension.getJacPath}",
-            "args": "run ${file}"
-          }
-        ]
-      }
-    ],
     "commands": [
       {
         "command": "jaclang-extension.visualizeGraph",
-        "title": "jacvis: Visualize Jaclang Graph"
+        "title": "Jac: Visualize Graph"
       },
       {
         "command": "jaclang-extension.selectEnv",
-        "title": "Jaclang: Select Environment"
+        "title": "Jac: Select Environment"
       },
       {
         "command": "jaclang-extension.toggleDeveloperMode",
@@ -83,9 +68,9 @@
         "icon": "$(play)"
       },
       {
-        "command": "jaclang-extension.checkCurrentFile",
-        "title": "Jac: Check",
-        "icon": "$(shield)"
+        "command": "jaclang-extension.debugCurrentFile",
+        "title": "Jac: Debug",
+        "icon": "$(debug-alt)"
       },
       {
         "command": "jaclang-extension.serveCurrentFile",
@@ -101,7 +86,7 @@
           "when": "resourceLangId == jac"
         },
         {
-          "command": "jaclang-extension.checkCurrentFile",
+          "command": "jaclang-extension.debugCurrentFile",
           "group": "navigation@1",
           "when": "resourceLangId == jac"
         }
@@ -141,6 +126,76 @@
         "language": "jac",
         "scopeName": "source.jac",
         "path": "./syntaxes/jac.tmLanguage.json"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "jacdebug",
+        "label": "Jac Debug",
+        "configurationAttributes": {
+          "launch": {
+            "required": [],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the Jac executable",
+                "default": "${command:extension.jaclang-extension.getJacPath}"
+              },
+              "args": {
+                "type": "array",
+                "description": "Command line arguments passed to the program",
+                "items": {
+                  "type": "string"
+                },
+                "default": ["run", "${file}"]
+              },
+              "console": {
+                "enum": ["internalConsole", "integratedTerminal", "externalTerminal"],
+                "description": "Where to launch the debug target",
+                "default": "integratedTerminal"
+              },
+              "justMyCode": {
+                "type": "boolean",
+                "description": "Enable/disable debugging just the user's code",
+                "default": true
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Jac: Debug Current File",
+            "python": "${command:extension.jaclang-extension.getPythonPath}",
+            "program": "${command:extension.jaclang-extension.getJacPath}",
+            "args": [
+              "run",
+              "${file}"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Jac: Debug Current File",
+            "description": "Debug the currently active Jac file",
+            "body": {
+              "type": "debugpy",
+              "request": "launch",
+              "name": "Jac: Debug Current File",
+              "python": "${command:extension.jaclang-extension.getPythonPath}",
+              "program": "${command:extension.jaclang-extension.getJacPath}",
+              "args": [
+                "run",
+                "${file}"
+              ],
+              "console": "integratedTerminal",
+              "justMyCode": true
+            }
+          }
+        ]
       }
     ]
   },
