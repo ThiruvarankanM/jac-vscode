@@ -107,7 +107,7 @@ describe('EnvManager (Jest)', () => {
 
   /**
    * TEST-1: Default behavior when no environment is configured
-   *   
+   *
    * - EnvManager should provide a sensible default when no Jac environment is saved
    * - The default should be platform-appropriate ('jac.exe' on Windows, 'jac' on Unix)
    *
@@ -122,7 +122,7 @@ describe('EnvManager (Jest)', () => {
 
   /**
    * TEST 2: Status bar updates correctly when environment is set
-   * 
+   *
    * - Status bar text is updated to show current Jac environment
    * - Status bar is properly displayed to the user
     *
@@ -163,7 +163,7 @@ describe('EnvManager (Jest)', () => {
 
   /**
    * TEST 4: Manual path entry - validation failure and retry
-   * 
+   *
    * - Invalid paths are rejected with error message
    * - User is prompted to retry after entering invalid path
    * - Error handling works correctly in the retry flow
@@ -185,7 +185,7 @@ describe('EnvManager (Jest)', () => {
 
   /**
    * TEST 5: Successful environment selection from auto-detected environments
-   *   
+   *
    * - Auto-detection finds available Jac environments
    * - User can select from a list of found environments
    * - Selected environment is saved and applied
@@ -248,7 +248,7 @@ describe('EnvManager (Jest)', () => {
    * - EnvManager correctly loads a previously saved environment path
    * - Status bar is updated with the saved environment
    * - No prompting occurs when valid saved environment exists
-   * 
+   *
    */
   test('should initialize with saved environment path', async () => {
 
@@ -344,7 +344,7 @@ describe('EnvManager (Jest)', () => {
    * - When LSP restart fails, should show error and fall back to reload
    * - Should handle restart errors gracefully without crashing
    * - Environment should still be saved even if restart fails
-   * 
+   *
    */
   test('should handle LSP restart failure and fallback to reload', async () => {
     const mockError = new Error('LSP restart failed');
@@ -367,7 +367,7 @@ describe('EnvManager (Jest)', () => {
   });
 
   /**
-     * Test Cases for Check Reload Window Issue.  
+     * Test Cases for Check Reload Window Issue.
      * CASE 1:
      * User selects env from QuickPick, LSP manager is missing -> should call onLspNeeded()
      */
