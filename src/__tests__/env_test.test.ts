@@ -230,7 +230,7 @@ describe('EnvManager (Jest)', () => {
   });
 
   /**
-   * TEST 8: User cancels environment selection dialog 
+   * TEST 8: User cancels environment selection dialog
    */
   test('should handle user cancellation of environment selection', async () => {
 
