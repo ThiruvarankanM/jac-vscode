@@ -161,6 +161,9 @@ describe('EnvManager (Jest)', () => {
       .mockResolvedValueOnce('/bad/jac') // first try
       .mockResolvedValueOnce(undefined); // user cancels on retry
 
+      .mockResolvedValueOnce('/bad/jac') // first try
+      .mockResolvedValueOnce(undefined); // user cancels on retry
+
     (vscode.window.showErrorMessage as jest.Mock).mockResolvedValue('Retry');
 
     await (envManager as any).handleManualPathEntry();
@@ -178,6 +181,8 @@ describe('EnvManager (Jest)', () => {
     (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue(['/path/to/jac']);
     (vscode.window.showQuickPick as jest.Mock).mockResolvedValue({
       env: '/path/to/jac',
+      label: 'Jac (MyEnv)',
+      description: '/path/to/jac',
       label: 'Jac (MyEnv)',
       description: '/path/to/jac',
     });
@@ -199,14 +204,22 @@ describe('EnvManager (Jest)', () => {
    * TEST 6: Warning when no environments found, QuickPick still shown
    */
   test('should show warning when no envs are found and still show QuickPick', async () => {
+  test('should show warning when no envs are found and still show QuickPick', async () => {
 
     (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue([]);
     (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
+    (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined); // user cancels
     (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined); // user cancels
 
     await envManager.promptEnvironmentSelection();
 
     expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+      'No Jac environments found. You can install Jac, or select a Jac executable manually.',
+      'Install Jac Now'
+    );
+
+    expect(vscode.window.showQuickPick).toHaveBeenCalled();
+    expect(context.globalState.update).not.toHaveBeenCalled();
       'No Jac environments found. You can install Jac, or select a Jac executable manually.',
       'Install Jac Now'
     );

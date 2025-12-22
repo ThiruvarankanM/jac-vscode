@@ -101,7 +101,26 @@ export class EnvManager {
                         pathPartsFromEnv.some(dir =>path.join(dir, path.basename(env)) === env);
 
                     let displayName = '';
+                    let displayName = '';
 
+                    if (isGlobal) {
+                        displayName = 'Jac';
+                    } else {
+                        // Check if it's in a conda environment
+                        if (env.includes('conda') || env.includes('miniconda') || env.includes('anaconda')) {
+                            const envMatch = env.match(/envs[\/\\]([^\/\\]+)/);
+                            displayName = envMatch ? `Jac (${envMatch[1]})` : 'Jac';
+                        }
+                        // All other environments (venv, local, etc.)
+                        else {
+                            const venvMatch = env.match(/([^\/\\]*(?:\.?venv|virtualenv)[^\/\\]*)/);
+                            if (venvMatch) {
+                                displayName = `Jac (${venvMatch[1]})`;
+                            } else {
+                                // For Windows: go up from Scripts folder to get environment name
+                                // For Unix: use the bin's parent directory name
+                                const dirPath = path.dirname(env);
+                                const parentDirName = path.basename(dirPath);
                     if (isGlobal) {
                         displayName = 'Jac';
                     } else {
@@ -131,6 +150,16 @@ export class EnvManager {
                             }
                         }
                     }
+                                if (parentDirName === 'Scripts' || parentDirName === 'bin') {
+                                    // Go up one more level to get the actual environment name
+                                    const envDirName = path.basename(path.dirname(dirPath));
+                                    displayName = `Jac (${envDirName})`;
+                                } else {
+                                    displayName = `Jac (${parentDirName})`;
+                                }
+                            }
+                        }
+                    }
 
                     return {
                         label: displayName,
@@ -138,7 +167,27 @@ export class EnvManager {
                         env: env
                     };
                 });
+                    return {
+                        label: displayName,
+                        description: this.formatPathForDisplay(env),
+                        env: env
+                    };
+                });
 
+                quickPickItems.push(...detectedItems);
+            } else {
+                // Show non-blocking warning message when no environments found
+                vscode.window.showWarningMessage(
+                    "No Jac environments found. You can install Jac, or select a Jac executable manually.",
+                    "Install Jac Now"
+                ).then(action => {
+                    if (action === "Install Jac Now") {
+                        vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
+                    }
+                });
+            }
+
+            // Show QuickPick
                 quickPickItems.push(...detectedItems);
             } else {
                 // Show non-blocking warning message when no environments found
@@ -164,13 +213,24 @@ export class EnvManager {
                 this.updateStatusBar();
 
                 if (choice?.env === "manual") {
+            if (!choice || choice.env === "manual" || choice.env === "browse") {
+                this.updateStatusBar();
+
+                if (choice?.env === "manual") {
                     await this.handleManualPathEntry();
+                } else if (choice?.env === "browse") {
                 } else if (choice?.env === "browse") {
                     await this.handleFileBrowser();
                 }
                 return;
             }
+                }
+                return;
+            }
 
+            this.jacPath = choice.env;
+            await this.context.globalState.update('jacEnvPath', choice.env);
+            this.updateStatusBar();
             this.jacPath = choice.env;
             await this.context.globalState.update('jacEnvPath', choice.env);
             this.updateStatusBar();
@@ -182,6 +242,8 @@ export class EnvManager {
                 { detail: `Path: ${displayPath}` }
             );
 
+            // Restart language server to use new environment
+            await this.restartLanguageServer();
             // Restart language server to use new environment
             await this.restartLanguageServer();
         } catch (error: any) {
