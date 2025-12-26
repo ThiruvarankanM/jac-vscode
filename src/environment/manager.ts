@@ -2,20 +2,18 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { findPythonEnvsWithJac, validateJacExecutable } from '../utils/envDetection';
-import { getLspManager } from '../extension';
+import { getLspManager, createAndStartLsp } from '../extension';
 
 export class EnvManager {
     private context: vscode.ExtensionContext;
     private statusBar: vscode.StatusBarItem;
     private jacPath: string | undefined;
-    private onLspNeeded?: () => Promise<void>; // callback to start LSP
 
-    constructor(context: vscode.ExtensionContext, onLspNeeded?: () => Promise<void>) { // callback parameter
+    constructor(context: vscode.ExtensionContext) {
         this.context = context;
         this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.statusBar.command = 'jaclang-extension.selectEnv';
         context.subscriptions.push(this.statusBar);
-        this.onLspNeeded = onLspNeeded; // store callback
     }
 
 
@@ -318,8 +316,8 @@ export class EnvManager {
     updateStatusBar() {
         if (this.jacPath) {
             const isGlobal = this.jacPath === 'jac' || this.jacPath === 'jac.exe' ||
-                (process.env.PATH?.split(path.delimiter) || []).some(dir =>
-                    path.join(dir, path.basename(this.jacPath!)) === this.jacPath);
+                           (process.env.PATH?.split(path.delimiter) || []).some(dir =>
+                               path.join(dir, path.basename(this.jacPath!)) === this.jacPath);
 
             const label = isGlobal ? 'Jac (Global)' : 'Jac';
             this.statusBar.text = `$(check) ${label}`;
@@ -334,15 +332,19 @@ export class EnvManager {
     private async restartLanguageServer(): Promise<void> {
         const lspManager = getLspManager();
         if (lspManager) {
+            // LSP exists: restart it
             try {
-                vscode.window.showInformationMessage('Restarting Jac Language Server to apply environment changes...');
                 await lspManager.restart();
             } catch (error: any) {
                 vscode.window.showErrorMessage(`Failed to restart language server: ${error.message || error}`);
             }
-        } else if (this.onLspNeeded) { // trigger callback if LSP doesn't exist
-            vscode.window.showInformationMessage('Starting Jac Language Server with selected environment...');
-            await this.onLspNeeded(); // start LSP without window reload
+        } else {
+            // LSP doesn't exist yet: create and start it
+            try {
+                await createAndStartLsp(this, this.context);
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Failed to start language server: ${error.message || error}`);
+            }
         }
     }
 }

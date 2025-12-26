@@ -38,7 +38,6 @@ export class LspManager {
         );
 
         await this.client.start();
-        vscode.window.showInformationMessage('Jac Language Server started!');
     }
 
     public async stop(): Promise<void> {
@@ -65,7 +64,6 @@ export class LspManager {
             // Small delay to ensure proper cleanup before restarting
             await new Promise(resolve => setTimeout(resolve, 500));
             await this.start();
-            vscode.window.showInformationMessage('Jac Language Server restarted successfully!');
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to restart Jac Language Server: ${error}`);
             throw error;
