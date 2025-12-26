@@ -46,7 +46,7 @@ export class EnvManager {
 
         this.updateStatusBar();
     }
-    
+
     private async setupJacFileOpenListener() {
         // Check existing open documents
         const jacDoc = vscode.workspace.textDocuments.find(doc => doc.languageId === 'jac');
@@ -54,7 +54,7 @@ export class EnvManager {
             this.hasPromptedThisSession = true;
             await this.showEnvironmentPrompt();
         }
-        
+
         // Listen for new documents being opened
         this.context.subscriptions.push(
             vscode.workspace.onDidOpenTextDocument(async (document) => {
@@ -69,7 +69,7 @@ export class EnvManager {
     private async showEnvironmentPrompt() {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
         const envs = await findPythonEnvsWithJac(workspaceRoot);
-        
+
         // Unified handler - both cases with ternary
         const isNoEnv = envs.length === 0;
         const action = isNoEnv
@@ -82,7 +82,7 @@ export class EnvManager {
                 'No Jac environment selected. Select one to enable IntelliSense.',
                 'Select Environment'
             );
-        
+
         if (action === 'Install Jac') {
             vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
         } else if (action === 'Select Manually' || action === 'Select Environment') {
@@ -364,7 +364,7 @@ export class EnvManager {
     }
 
     private async restartLanguageServer(): Promise<void> {
-        const lspManager = getLspManager();        
+        const lspManager = getLspManager();
         if (lspManager) {
             // LSP exists: restart it
             try {
