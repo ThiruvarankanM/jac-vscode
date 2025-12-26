@@ -2,12 +2,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { findPythonEnvsWithJac, validateJacExecutable } from '../utils/envDetection';
-import { getLspManager } from '../extension';
+import { getLspManager, createAndStartLsp } from '../extension';
 
 export class EnvManager {
     private context: vscode.ExtensionContext;
     private statusBar: vscode.StatusBarItem;
     private jacPath: string | undefined;
+    private hasPromptedThisSession = false;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -40,11 +41,53 @@ export class EnvManager {
         }
 
         if (!this.jacPath) {
-            await this.promptEnvironmentSelection();
+            await this.setupJacFileOpenListener();// Check existing and listen for new .jac files
         }
 
-        // Final status bar update to ensure it's always shown
         this.updateStatusBar();
+    }
+    
+    private async setupJacFileOpenListener() {
+        // Check existing open documents
+        const jacDoc = vscode.workspace.textDocuments.find(doc => doc.languageId === 'jac');
+        if (jacDoc && !this.hasPromptedThisSession) {
+            this.hasPromptedThisSession = true;
+            await this.showEnvironmentPrompt();
+        }
+        
+        // Listen for new documents being opened
+        this.context.subscriptions.push(
+            vscode.workspace.onDidOpenTextDocument(async (document) => {
+                if (!this.jacPath && document.languageId === 'jac' && !this.hasPromptedThisSession) {
+                    this.hasPromptedThisSession = true;
+                    await this.showEnvironmentPrompt();
+                }
+            })
+        );
+    }
+
+    private async showEnvironmentPrompt() {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+        const envs = await findPythonEnvsWithJac(workspaceRoot);
+        
+        // Unified handler - both cases with ternary
+        const isNoEnv = envs.length === 0;
+        const action = isNoEnv
+            ? await vscode.window.showWarningMessage(
+                'No Jac environments found. Install Jac to enable IntelliSense and language features.',
+                'Install Jac',
+                'Select Manually'
+            )
+            : await vscode.window.showInformationMessage(
+                'No Jac environment selected. Select one to enable IntelliSense.',
+                'Select Environment'
+            );
+        
+        if (action === 'Install Jac') {
+            vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
+        } else if (action === 'Select Manually' || action === 'Select Environment') {
+            await this.promptEnvironmentSelection();
+        }
     }
 
     getJacPath(): string {
@@ -138,16 +181,6 @@ export class EnvManager {
                 });
 
                 quickPickItems.push(...detectedItems);
-            } else {
-                // Show non-blocking warning message when no environments found
-                vscode.window.showWarningMessage(
-                    "No Jac environments found. You can install Jac, or select a Jac executable manually.",
-                    "Install Jac Now"
-                ).then(action => {
-                    if (action === "Install Jac Now") {
-                        vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
-                    }
-                });
             }
 
             // Show QuickPick
@@ -331,21 +364,21 @@ export class EnvManager {
     }
 
     private async restartLanguageServer(): Promise<void> {
-        const lspManager = getLspManager();
+        const lspManager = getLspManager();        
         if (lspManager) {
+            // LSP exists: restart it
             try {
-                vscode.window.showInformationMessage('Restarting Jac Language Server to apply environment changes...');
                 await lspManager.restart();
             } catch (error: any) {
                 vscode.window.showErrorMessage(`Failed to restart language server: ${error.message || error}`);
-                // Fallback to window reload if restart fails
-                vscode.window.showWarningMessage('Falling back to window reload...');
-                vscode.commands.executeCommand("workbench.action.reloadWindow");
             }
         } else {
-            // Fallback to window reload if no LSP manager is available
-            vscode.window.showInformationMessage('Reloading window to apply environment changes...');
-            vscode.commands.executeCommand("workbench.action.reloadWindow");
+            // LSP doesn't exist: create and start it
+            try {
+                await createAndStartLsp(this, this.context);
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Failed to start language server: ${error.message || error}`);
+            }
         }
     }
 }
