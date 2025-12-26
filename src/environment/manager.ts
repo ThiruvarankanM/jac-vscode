@@ -27,13 +27,8 @@ export class EnvManager {
         // Validate existing path if present
         if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
             vscode.window.showWarningMessage(
-                `The previously selected Jac environment is no longer valid: ${this.jacPath}`,
-                "Select New Environment"
-            ).then(action => {
-                if (action === "Select New Environment") {
-                    this.promptEnvironmentSelection();
-                }
-            });
+                `The previously selected Jac environment is no longer valid`
+);
             this.jacPath = undefined;
             await this.context.globalState.update('jacEnvPath', undefined);
             this.updateStatusBar(); // Update after clearing invalid path
