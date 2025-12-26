@@ -84,7 +84,6 @@ jest.mock('../extension', () => ({
 describe('EnvManager (Jest)', () => {
   let context: any;
   let envManager: EnvManager;
-  let onLspNeeded: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -103,9 +102,7 @@ describe('EnvManager (Jest)', () => {
       subscriptions: [],
     };
 
-    // Create callback once for all tests
-    onLspNeeded = jest.fn().mockResolvedValue(undefined);
-    envManager = new EnvManager(context, onLspNeeded);
+    envManager = new EnvManager(context);
   });
 
   /**
@@ -148,7 +145,6 @@ describe('EnvManager (Jest)', () => {
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       'Jac environment set to: /fake/jac'
     );
-    expect(onLspNeeded).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -190,9 +186,6 @@ describe('EnvManager (Jest)', () => {
       'Selected Jac environment: Jac (MyEnv)',
       { detail: 'Path: /path/to/jac' }
     );
-
-    expect(onLspNeeded).toHaveBeenCalledTimes(1);
-
   });
 
   /**
@@ -244,9 +237,9 @@ describe('EnvManager (Jest)', () => {
   });
 
   /**
-   * TEST 9: QuickPick env selection, LSP exists -> restart (no callback)
+   * TEST 9: QuickPick env selection, LSP exists -> restart
    */
-  test("restarts LSP when manager exists and does NOT call onLspNeeded", async () => {
+  test("restarts LSP when manager exists", async () => {
     (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue([
       "/path/to/jac",
     ]);
@@ -259,38 +252,31 @@ describe('EnvManager (Jest)', () => {
 
     (getLspManager as jest.Mock).mockReturnValue(mockLspManager);
 
-    // Reset onLspNeeded for this test
-    onLspNeeded.mockClear();
-
     await envManager.promptEnvironmentSelection();
 
     expect(mockLspManager.restart).toHaveBeenCalledTimes(1);
-    expect(onLspNeeded).not.toHaveBeenCalled();
   });
 
   /**
-   * TEST 10: Manual path success, LSP exists -> restart (no callback)
+   * TEST 10: Manual path success, LSP exists -> restart
    */
-  test("manual path success restarts LSP if manager exists (no onLspNeeded)", async () => {
+  test("manual path success restarts LSP if manager exists", async () => {
     (envDetection.validateJacExecutable as jest.Mock).mockResolvedValue(true);
     (vscode.window.showInputBox as jest.Mock).mockResolvedValue("/manual/jac");
 
     (getLspManager as jest.Mock).mockReturnValue(mockLspManager);
 
-    onLspNeeded.mockClear();
-
     await (envManager as any).handleManualPathEntry();
 
     expect(context.globalState.update).toHaveBeenCalledWith("jacEnvPath", "/manual/jac");
     expect(mockLspManager.restart).toHaveBeenCalledTimes(1);
-    expect(onLspNeeded).not.toHaveBeenCalled();
   });
 
 
   /**
-   * TEST 11: File browser success, LSP missing -> call callback
+   * TEST 11: File browser success, LSP missing
    */
-  test("file browser success calls onLspNeeded if LSP is missing", async () => {
+  test("file browser success with no LSP", async () => {
 
     (getLspManager as jest.Mock).mockReturnValue(undefined);
 
@@ -302,13 +288,12 @@ describe('EnvManager (Jest)', () => {
     await (envManager as any).handleFileBrowser();
 
     expect(context.globalState.update).toHaveBeenCalledWith("jacEnvPath", "/browser/jac");
-    expect(onLspNeeded).toHaveBeenCalledTimes(1);
   });
 
   /**
-   * TEST 12: File browser success, LSP exists -> restart (no callback)
+   * TEST 12: File browser success, LSP exists -> restart
    */
-  test("file browser success restarts LSP if manager exists (no onLspNeeded)", async () => {
+  test("file browser success restarts LSP if manager exists", async () => {
 
     (getLspManager as jest.Mock).mockReturnValue(mockLspManager);
 
@@ -317,30 +302,24 @@ describe('EnvManager (Jest)', () => {
       { fsPath: "/browser/jac" },
     ]);
 
-    onLspNeeded.mockClear();
-
     await (envManager as any).handleFileBrowser();
 
     expect(context.globalState.update).toHaveBeenCalledWith("jacEnvPath", "/browser/jac");
     expect(mockLspManager.restart).toHaveBeenCalledTimes(1);
-    expect(onLspNeeded).not.toHaveBeenCalled();
   });
 
 
   /**
-   * TEST 13: Invalid saved env during init -> clear state (no callback)
+   * TEST 13: Invalid saved env during init -> clear state
    */
-  test("invalid saved env in init clears jacEnvPath and does NOT call onLspNeeded", async () => {
+  test("invalid saved env in init clears jacEnvPath", async () => {
     context.globalState.get.mockReturnValue("/invalid/jac");
     (envDetection.validateJacExecutable as jest.Mock).mockResolvedValue(false);
     (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
 
-    onLspNeeded.mockClear();
-
     await envManager.init();
 
     expect(context.globalState.update).toHaveBeenCalledWith("jacEnvPath", undefined);
-    expect(onLspNeeded).not.toHaveBeenCalled();
   });
 
 });
