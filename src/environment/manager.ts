@@ -330,7 +330,7 @@ export class EnvManager {
     }
 
     private async restartLanguageServer(): Promise<void> {
-        const lspManager = getLspManager();        
+        const lspManager = getLspManager();
         if (lspManager) {
             // LSP exists: restart it
             try {
