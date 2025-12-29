@@ -283,8 +283,7 @@ describe('EnvManager (Jest)', () => {
     await envManager.init();
 
     expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
-        `The previously selected Jac environment is no longer valid: /invalid/jac/path`,
-        'Select New Environment');
+        `The previously selected Jac environment is no longer valid`);
     expect(context.globalState.update).toHaveBeenCalledWith('jacEnvPath', undefined);
     expect((envManager as any).statusBar.text).toContain('No Env');
   });
