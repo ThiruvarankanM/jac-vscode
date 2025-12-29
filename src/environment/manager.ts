@@ -25,28 +25,15 @@ export class EnvManager {
         // Always show status bar immediately, even before environment detection
         this.updateStatusBar();
 
-        // Validate existing path if present
-        if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
-            vscode.window.showWarningMessage(
-                `The previously selected Jac environment is no longer valid: ${this.jacPath}`,
-                "Select New Environment"
-            ).then(action => {
-                if (action === "Select New Environment") {
-                    this.promptEnvironmentSelection();
-                }
-            });
-            this.jacPath = undefined;
-            await this.context.globalState.update('jacEnvPath', undefined);
-            this.updateStatusBar(); // Update after clearing invalid path
-        }
+        await this.validateAndClearIfInvalid();  // Validate and clear if invalid
 
         if (!this.jacPath) {
-            this.setupJacFileOpenListener();// Check existing and listen for new .jac files
+            this.setupJacFileOpenListener(); // Don't block - show notification when .jac file is opened
         }
 
         this.updateStatusBar();
     }
-
+    
     private async setupJacFileOpenListener() {
         // Check existing open documents
         const jacDoc = vscode.workspace.textDocuments.find(doc => doc.languageId === 'jac');
@@ -54,7 +41,7 @@ export class EnvManager {
             this.hasPromptedThisSession = true;
             await this.showEnvironmentPrompt();
         }
-
+        
         // Listen for new documents being opened
         this.context.subscriptions.push(
             vscode.workspace.onDidOpenTextDocument(async (document) => {
@@ -69,7 +56,7 @@ export class EnvManager {
     private async showEnvironmentPrompt() {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
         const envs = await findPythonEnvsWithJac(workspaceRoot);
-
+        
         // Unified handler - both cases with ternary
         const isNoEnv = envs.length === 0;
         const action = isNoEnv
@@ -82,7 +69,7 @@ export class EnvManager {
                 'No Jac environment selected. Select one to enable IntelliSense.',
                 'Select Environment'
             );
-
+        
         if (action === 'Install Jac') {
             vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
         } else if (action === 'Select Manually' || action === 'Select Environment') {
@@ -107,10 +94,20 @@ export class EnvManager {
         return process.platform === 'win32' ? 'python.exe' : 'python';
     }
 
+    //Validates the current environment and clears it if invalid
+    private async validateAndClearIfInvalid(): Promise<void> {
+        if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
+            this.jacPath = undefined;
+            await this.context.globalState.update('jacEnvPath', undefined);
+            this.updateStatusBar();
+        }
+    }
+
     async promptEnvironmentSelection() {
         try {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-
+            await this.validateAndClearIfInvalid(); // Validate current environment before showing picker
+            
             // Instant environment discovery - no progress dialogs needed!
             const envs = await findPythonEnvsWithJac(workspaceRoot);
 
@@ -207,7 +204,6 @@ export class EnvManager {
             this.updateStatusBar();
 
             // Show success message with path details
-
             const displayPath = this.formatPathForDisplay(choice.env);
             vscode.window.showInformationMessage(
                 `Selected Jac environment: ${choice.label}`,
@@ -364,7 +360,7 @@ export class EnvManager {
     }
 
     private async restartLanguageServer(): Promise<void> {
-        const lspManager = getLspManager();
+        const lspManager = getLspManager();        
         if (lspManager) {
             // LSP exists: restart it
             try {
