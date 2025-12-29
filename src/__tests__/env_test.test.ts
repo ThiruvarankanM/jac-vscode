@@ -339,7 +339,7 @@ describe('EnvManager (Jest)', () => {
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       'Jac environment set to: /browser/jac'
     );
-    
+
     expect(createAndStartLsp).toHaveBeenCalledTimes(1);
   });
 
