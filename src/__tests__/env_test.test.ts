@@ -6,7 +6,7 @@ import { EnvManager } from '../environment/manager';
 
 import * as vscode from 'vscode';
 import * as envDetection from '../utils/envDetection';
-import { getLspManager } from '../extension';
+import { getLspManager, createAndStartLsp } from '../extension';
 
 
 // Inline mock for vscode-languageclient
@@ -78,6 +78,7 @@ const mockLspManager = {
 // Mock the extension module
 jest.mock('../extension', () => ({
   getLspManager: jest.fn(() => mockLspManager),
+  createAndStartLsp: jest.fn().mockResolvedValue(undefined),
 }));
 
 
@@ -138,6 +139,7 @@ describe('EnvManager (Jest)', () => {
    *
    * - Valid manual path is accepted and saved to global state
    * - User receives confirmation message
+   * - LSP manager is created and started when not already running
    */
   test('should accept manual path if validate passes', async () => {
     (getLspManager as jest.Mock).mockReturnValue(undefined);
@@ -154,6 +156,8 @@ describe('EnvManager (Jest)', () => {
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       'Jac environment set to: /fake/jac'
     );
+    // LSP is created and started when manager doesn't exist
+    expect(createAndStartLsp).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -161,6 +165,7 @@ describe('EnvManager (Jest)', () => {
    *
    * - Invalid paths are rejected with error message
    * - User is offered retry or browse for file option
+   * - And he escapes by cancelling the input box
    */
   test('should reject invalid manual path and retry', async () => {
 
@@ -186,6 +191,7 @@ describe('EnvManager (Jest)', () => {
    *
    * - Detected environments are presented to user via QuickPick
    * - Selected environment is saved to global state
+   * - LSP manager is created and started when not already running
    */
   test('should prompt environment selection when envs found', async () => {
     (getLspManager as jest.Mock).mockReturnValue(undefined);
@@ -205,6 +211,8 @@ describe('EnvManager (Jest)', () => {
       'Selected Jac environment: Jac (MyEnv)',
       { detail: 'Path: /path/to/jac' }
     );
+    // LSP is created and started when manager doesn't exist
+    expect(createAndStartLsp).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -314,6 +322,7 @@ describe('EnvManager (Jest)', () => {
    * - User can browse and select Jac executable via file dialog
    * - Selected path is validated and saved to global state
    * - User receives confirmation message
+   * - LSP manager is created and started when not already running
    */
   test("file browser success with no LSP", async () => {
 
@@ -330,7 +339,8 @@ describe('EnvManager (Jest)', () => {
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       'Jac environment set to: /browser/jac'
     );
-
+    
+    expect(createAndStartLsp).toHaveBeenCalledTimes(1);
   });
 
   /**
