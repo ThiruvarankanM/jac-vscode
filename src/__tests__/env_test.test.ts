@@ -477,4 +477,39 @@ describe('EnvManager (Jest)', () => {
 
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
   });
+
+  /**
+   * TEST 18: Switching between multiple .jac files doesn't show prompt twice
+   *
+   * - Opening first .jac file shows the prompt
+   * - Opening second .jac file should NOT show prompt again
+   * - hasPromptedThisSession flag prevents duplicate prompts
+   */
+  test("switching between .jac files shows prompt only once", async () => {
+    context.globalState.get.mockReturnValue(undefined);
+    (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue(['/path/to/jac']);
+    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Select Environment');
+
+    // Set up listener and capture callback
+    let listenerCallback: any;
+    (vscode.workspace.onDidOpenTextDocument as jest.Mock).mockImplementation((cb) => {
+      listenerCallback = cb;
+      return { dispose: jest.fn() };
+    });
+    (vscode.workspace.textDocuments as any) = [];
+
+    await (envManager as any).setupJacFileOpenListener();
+
+    // Simulate opening FIRST .jac file
+    const firstJacFile = { languageId: 'jac', fileName: 'file1.jac' };
+    await listenerCallback(firstJacFile);
+
+    // Simulate opening SECOND .jac file
+    const secondJacFile = { languageId: 'jac', fileName: 'file2.jac' };
+    await listenerCallback(secondJacFile);
+
+    // Verify prompt was shown only ONCE (not twice)
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledTimes(1);
+    expect((envManager as any).hasPromptedThisSession).toBe(true);
+  });
 });
