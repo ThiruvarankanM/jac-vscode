@@ -128,7 +128,7 @@ describe('EnvManager (Jest)', () => {
    *
    * - Status bar text is updated to show current Jac environment
    * - Status bar is properly displayed to the user
-   * 
+   *
    */
   test('should update status bar when jacPath is set', () => {
 
