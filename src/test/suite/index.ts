@@ -8,21 +8,7 @@ import Mocha from 'mocha';
 import { glob } from 'glob';
 import * as vscode from 'vscode';
 
-declare global {
-	var testContext: vscode.ExtensionContext;
-	var testWorkspacePath: string;
-}
-
-export async function run(context?: vscode.ExtensionContext): Promise<void> {
-	global.testContext = context!;
-
-	const workspaceFolders = vscode.workspace.workspaceFolders;
-	global.testWorkspacePath = workspaceFolders?.[0]?.uri.fsPath || '';
-
-	console.log('\n📁 Test Environment:');
-	console.log(`   Extension Path: ${context?.extensionPath || 'N/A'}`);
-	console.log(`   Workspace: ${global.testWorkspacePath || 'N/A'}`);
-
+export async function run(): Promise<void> {
 	const mocha = new Mocha({
 		ui: 'bdd',
 		color: true,
@@ -33,7 +19,7 @@ export async function run(context?: vscode.ExtensionContext): Promise<void> {
 	const testsRoot = path.resolve(__dirname, '..');
 
 	return new Promise((resolve, reject) => {
-		glob('**/**.test.js', { cwd: testsRoot })
+		glob('suite/**/**.test.js', { cwd: testsRoot })
 			.then((files) => {
 				console.log(`\n🧪 Found ${files.length} test file(s)`);
 
