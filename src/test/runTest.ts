@@ -27,7 +27,7 @@ async function main() {
 		console.log(`   Extension: ${extensionDevelopmentPath}`);
 		console.log(`   Workspace: ${testWorkspacePath}\n`);
 
-		await runTests({ 
+		await runTests({
 			extensionDevelopmentPath,
 			extensionTestsPath,
 			vscodeExecutablePath,
