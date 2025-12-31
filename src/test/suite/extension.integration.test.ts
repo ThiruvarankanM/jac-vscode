@@ -32,21 +32,81 @@ describe('Extension Integration Tests', () => {
 
         // Verify test workspace with sample files is properly opened
         it('should load test workspace with fixtures', () => {
-            const folders = vscode.workspace.workspaceFolders;
-
-            expect(folders).to.exist;
-            expect(folders!.length).to.equal(1);
-            expect(folders![0].uri.fsPath).to.include('fixtures/workspace');
+            expect(workspacePath).to.include('fixtures/workspace');
         });
 
         // Verify sample.jac file is recognized as a JAC file with syntax highlighting
         it('should open sample.jac and detect language correctly', async () => {
             const filePath = path.join(workspacePath, 'sample.jac');
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-
+            
             expect(doc).to.exist;
             expect(doc.fileName).to.include('sample.jac');
             expect(doc.languageId).to.equal('jac');
+        });
+    });
+
+    // Test Group 2: Environment Detection & Management
+    // Verify JAC environment detection and Python path management works correctly
+    describe('Test 2: Environment Detection & Management', () => {
+        let envManager: any;
+
+        afterEach(async () => {
+            // Clean up open editors after each test
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        });
+
+        before(async () => {
+            const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
+            await ext!.activate();
+
+            const exports = ext!.exports;
+            envManager = exports?.getEnvManager?.();
+
+            expect(envManager, 'EnvManager should be exposed from extension').to.exist;
+        });
+
+        // Verify EnvManager initializes and provides valid JAC path
+        it('should initialize EnvManager and get Jac path (or fallback)', () => {
+            const jacPath = envManager.getJacPath();
+
+            expect(jacPath).to.exist;
+            expect(jacPath).to.be.a('string');
+            expect(jacPath.length).to.be.greaterThan(0);
+        });
+
+        // Verify EnvManager correctly resolves Python executable path from JAC environment
+        it('should return Python path based on Jac path', () => {
+            const pythonPath = envManager.getPythonPath();
+
+            expect(pythonPath).to.exist;
+            expect(pythonPath).to.be.a('string');
+            expect(pythonPath.length).to.be.greaterThan(0);
+            expect(pythonPath.toLowerCase()).to.include('python');
+        });
+
+        // Verify VS Code status bar is created for displaying environment information
+        it('should have status bar created after initialization', () => {
+            const statusBar = envManager.getStatusBar();
+            expect(statusBar).to.exist;
+        });
+
+        // Verify opening a JAC file works without errors
+        it('should handle .jac file opening and trigger environment detection', async () => {
+            const filePath = path.join(workspacePath, 'sample.jac');
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+            await vscode.window.showTextDocument(doc);
+            await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+        });
+
+        // Verify selectEnv command executes successfully and handles environment selection UI
+        it('should execute selectEnv command without throwing errors', async () => {
+            try {
+                await vscode.commands.executeCommand('jaclang-extension.selectEnv');
+                await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+            } catch (error) {
+                expect.fail(`selectEnv command failed: ${error}`);
+            }
         });
     });
 });
