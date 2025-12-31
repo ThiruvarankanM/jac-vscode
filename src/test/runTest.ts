@@ -20,7 +20,7 @@ async function main() {
 		const [cli, ...args] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
 
 		console.log('Installing dependencies...');
-		
+
 		try {
 			await execFileAsync(cli, [...args, '--install-extension', 'ms-python.python']);
 			console.log('✓ Dependencies installed\n');
