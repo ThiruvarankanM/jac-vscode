@@ -38,7 +38,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         setupVisualDebuggerWebview(context);
 
-        const jacPath = envManager.getJacPath(); 
+        const jacPath = envManager.getJacPath();
         const isJacAvailable = await validateJacExecutable(jacPath);
 
         if (isJacAvailable) {
