@@ -32,7 +32,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: Run Integration Tests
-        run: xvfb-run -a npm run test:integration        env:
+        run: xvfb-run -a npm run test:integration
+        env:
           DISPLAY: :99
           ELECTRON_DISABLE_GPU: 1
           DBUS_SESSION_BUS_ADDRESS: /dev/null
