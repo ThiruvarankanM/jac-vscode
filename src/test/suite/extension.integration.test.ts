@@ -5,6 +5,7 @@ import * as path from 'path';
 describe('Extension Integration Tests', () => {
     let workspacePath: string;
 
+    // Initialize workspace path for all tests
     before(() => {
         const folders = vscode.workspace.workspaceFolders;
         expect(folders).to.exist;
@@ -12,9 +13,14 @@ describe('Extension Integration Tests', () => {
         workspacePath = folders![0].uri.fsPath;
     });
 
-    // Test Group 1: Extension Activation
-    // Verify VS Code extension infrastructure is properly set up
+    /* 
+       Test Group 1: Extension Activation
+       Verify VS Code extension infrastructure is properly set up,
+       including activation, language registration, workspace loading,
+       and opening of a sample .jac file.
+    */
     describe('Test 1: Extension Activation', () => {
+
         // Verify extension can be loaded and activated in VS Code
         it('should activate the Jac extension', async () => {
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
@@ -35,7 +41,7 @@ describe('Extension Integration Tests', () => {
             expect(workspacePath).to.include('fixtures/workspace');
         });
 
-        // Verify sample.jac file is recognized as a JAC file with syntax highlighting
+        // Verify sample.jac file is recognized as a JAC file
         it('should open sample.jac and detect language correctly', async () => {
             const filePath = path.join(workspacePath, 'sample.jac');
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
@@ -46,16 +52,16 @@ describe('Extension Integration Tests', () => {
         });
     });
 
-    // Test Group 2: Environment Detection & Management
-    // Verify JAC environment detection and Python path management works correctly
+    /* 
+       Test Group 2: Environment Detection & Management
+       Verify JAC environment detection, Python path resolution, 
+       status bar creation, and handling of .jac file opening and 
+       environment selection commands.
+    */
     describe('Test 2: Environment Detection & Management', () => {
         let envManager: any;
 
-        afterEach(async () => {
-            // Clean up open editors after each test
-            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-        });
-
+        // Initialize extension and retrieve EnvManager instance for tests
         before(async () => {
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
             await ext!.activate();
@@ -64,6 +70,11 @@ describe('Extension Integration Tests', () => {
             envManager = exports?.getEnvManager?.();
 
             expect(envManager, 'EnvManager should be exposed from extension').to.exist;
+        });
+
+        afterEach(async () => {
+            // Clean up open editors after each test
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         });
 
         // Verify EnvManager initializes and provides valid JAC path
