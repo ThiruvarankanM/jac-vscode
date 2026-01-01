@@ -78,9 +78,6 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             // Verify document was opened successfully
             expect(doc.languageId).to.equal('jac');
             expect(vscode.window.activeTextEditor?.document).to.equal(doc);
-
-            // Wait for prompt to appear and dismiss it
-            await new Promise(resolve => setTimeout(resolve, 1500));
         });
     });
 
@@ -287,9 +284,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             
             // Navigate to .venv option in quick pick menu
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
-            await new Promise(resolve => setTimeout(resolve, 200));
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
-            await new Promise(resolve => setTimeout(resolve, 200));
             
             // Confirm selection
             await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
