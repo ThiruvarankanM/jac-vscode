@@ -1,11 +1,11 @@
 /**
  * JAC Language Extension - Integration Test Suite
- * 
+ *
  * Tests the complete lifecycle of the Jaclang extension:
  * - Phase 1: Extension initialization and language registration
- * - Phase 2: Complete environment lifecycle (venv creation, jaclang installation, 
+ * - Phase 2: Complete environment lifecycle (venv creation, jaclang installation,
  *            environment detection & selection, cleanup & verification)
- * 
+ *
  * NOTE: Tests run sequentially and share state across phases.
  */
 
@@ -28,7 +28,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
     /**
      * PHASE 1: Initial Extension State - No Environment
-     * 
+     *
      * Verifies the extension loads correctly without any environment configured:
      * - Status bar shows "No Env"
      * - JAC language is registered
@@ -87,7 +87,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
     /**
      * PHASE 2: Environment Lifecycle - Install, Select, Verify & Cleanup
-     * 
+     *
      * Tests the complete environment workflow:
      * - Detects Python and creates virtual environment
      * - Installs jaclang package
@@ -162,7 +162,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             pythonCmd = detectedPython;
             temporaryVenvDirectory = path.join(workspacePath, '.venv');
             venvPath = temporaryVenvDirectory;
-            
+
             // Platform-specific paths to Python and jac executables
             venvPythonPath = process.platform === 'win32'
                 ? path.join(venvPath, 'Scripts', 'python.exe')
@@ -170,7 +170,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             jacExePath = process.platform === 'win32'
                 ? path.join(venvPath, 'Scripts', 'jac.exe')
                 : path.join(venvPath, 'bin', 'jac');
-            
+
             // Get environment manager for status bar verification
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
             await ext!.activate();
@@ -193,7 +193,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         });
 
         // === INSTALLATION PHASE ===
-        
+
         it('should detect Python interpreter', () => {
             // Verify Python is available on the system
             expect(pythonCmd, 'Python must be available').to.exist;
@@ -257,10 +257,10 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             // After installing jaclang, environment detection should find the .venv jac executable
             const { findPythonEnvsWithJac } = await import('../../utils/envDetection');
             const envs = await findPythonEnvsWithJac(workspacePath);
-            
+
             // Unlike Phase 1 (where no environments existed), now we should have at least one
             expect(envs.length).to.be.greaterThan(0);
-            
+
             const foundVenvJac = envs.some(env => env.includes('.venv'));
             expect(foundVenvJac, '.venv jac executable should be detected').to.be.true;
 
@@ -273,33 +273,33 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
             // Import environment detection utility to verify environments are found
             const { findPythonEnvsWithJac } = await import('../../utils/envDetection');
-            
+
             // Verify environment detection finds our installed jac
             const envs = await findPythonEnvsWithJac(workspacePath);
             expect(envs.length).to.be.greaterThan(0);
-            
+
             const foundVenvJac = envs.some(env => env.includes('.venv'));
             expect(foundVenvJac).to.be.true;
-            
+
             // Trigger environment selection command
             vscode.commands.executeCommand('jaclang-extension.selectEnv');
             await new Promise(resolve => setTimeout(resolve, 1500));
-            
+
             // Navigate to .venv option in quick pick menu
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
             await new Promise(resolve => setTimeout(resolve, 200));
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
             await new Promise(resolve => setTimeout(resolve, 200));
-            
+
             // Confirm selection
             await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
             await new Promise(resolve => setTimeout(resolve, 1500));
-            
+
             // Verify environment was successfully selected
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
             const envMgr = ext!.exports?.getEnvManager?.();
             const selectedJacPath = envMgr?.getJacPath?.();
-            
+
             expect(selectedJacPath).to.include('.venv');
 
         });
@@ -309,7 +309,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
             // After environment selection, status bar should display the selected path
             const statusBar = envManager?.getStatusBar?.();
-            
+
             // Status bar should no longer show "No Env" and should include path indicator
             expect(statusBar?.text).to.not.include('No Env');
             expect(statusBar?.text.length).to.be.greaterThan(0);
@@ -335,7 +335,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             // Remove jaclang package from virtual environment
             // Exit code 0 = success, Exit code 2 = package not found (acceptable)
             const uninstallResult = await runCommand(venvPythonPath, ['-m', 'pip', 'uninstall', '-y', 'jaclang']);
-            expect([0, 2]).to.include(uninstallResult.code, 
+            expect([0, 2]).to.include(uninstallResult.code,
                 `Uninstall failed with exit code ${uninstallResult.code}: ${uninstallResult.commandError}`);
         });
 
@@ -346,10 +346,10 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             await vscode.commands.executeCommand('jaclang-extension.selectEnv');
             await new Promise(resolve => setTimeout(resolve, 500));
             await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
-            
+
             // Status bar should revert to "No Env" since jac is no longer available
             const statusBar = envManager?.getStatusBar?.();
-            
+
             // After cleanup, should show "No Env" again
             expect(statusBar?.text).to.include('No Env');
         });
@@ -363,7 +363,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
                     await fs.rm(temporaryVenvDirectory, { recursive: true, force: true });
                 } catch { }
             }
-            
+
             // Verify directory was actually deleted
             const dirExists = await fileExists(temporaryVenvDirectory);
             expect(dirExists).to.be.false;
