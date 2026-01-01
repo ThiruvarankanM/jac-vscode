@@ -13,7 +13,7 @@ describe('Extension Integration Tests', () => {
         workspacePath = folders![0].uri.fsPath;
     });
 
-    /* 
+    /*
        Test Group 1: Extension Activation
        Verify VS Code extension infrastructure is properly set up,
        including activation, language registration, workspace loading,
@@ -52,10 +52,10 @@ describe('Extension Integration Tests', () => {
         });
     });
 
-    /* 
+    /*
        Test Group 2: Environment Detection & Management
-       Verify JAC environment detection, Python path resolution, 
-       status bar creation, and handling of .jac file opening and 
+       Verify JAC environment detection, Python path resolution,
+       status bar creation, and handling of .jac file opening and
        environment selection commands.
     */
     describe('Test 2: Environment Detection & Management', () => {
