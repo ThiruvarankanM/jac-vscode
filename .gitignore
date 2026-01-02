@@ -5,3 +5,4 @@ vendor/
 .vscode/
 .jaccache/
 .vscode-test/
+.DS_Store
