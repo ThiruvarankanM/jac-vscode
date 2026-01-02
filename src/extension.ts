@@ -3,11 +3,26 @@ import { EnvManager } from './environment/manager';
 import { registerAllCommands } from './commands';
 import { setupVisualDebuggerWebview } from './webview/visualDebugger';
 import { LspManager } from './lsp/lsp_manager';
+import { validateJacExecutable } from './utils/envDetection';
 
 let lspManager: LspManager | undefined;
 
 export function getLspManager(): LspManager | undefined {
     return lspManager;
+}
+
+// Create and start LSP Manager if not already running
+export async function createAndStartLsp(envManager: EnvManager, context: vscode.ExtensionContext): Promise<void> {
+    if (!lspManager) {
+        try {
+            lspManager = new LspManager(envManager);
+            await lspManager.start();
+            context.subscriptions.push({ dispose: () => lspManager?.stop() });
+        } catch (error) {
+            lspManager = undefined;
+            throw error;
+        }
+    }
 }
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -18,14 +33,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
         setupVisualDebuggerWebview(context);
 
-        lspManager = new LspManager(envManager);
-        await lspManager.start();
+        const jacPath = envManager.getJacPath();
+        const isJacAvailable = await validateJacExecutable(jacPath); // Check if Jac is available before starting LSP
 
-        context.subscriptions.push({
-            dispose: () => lspManager?.stop()
-        });
+        if (isJacAvailable) {
+            try {
+                await createAndStartLsp(envManager, context);
+            } catch (error) {
+                console.error('LSP failed to start during activation:', error);
+            }
+        }
+        // If Jac not available, silently skip - user can select environment later
     } catch (error) {
-        vscode.window.showErrorMessage(`Failed to activate Jac extension: ${error}`);
         console.error('Extension activation error:', error);
     }
 }
