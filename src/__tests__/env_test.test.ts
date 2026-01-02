@@ -244,13 +244,13 @@ describe('EnvManager (Jest)', () => {
   });
 
   /**
-   * TEST 7: init() with saved environment - Now validates + checks for .jac file listener
+   * TEST 7: init() with saved environment - loads and validates
    *
    * - Saved environment path is loaded and validated on init
    * - Status bar is updated to reflect the loaded environment
-   * - setupJacFileOpenListener is NOT called when jacPath is set
+   * - No environment prompt is shown when jacPath is already set
    */
-  test('should initialize with saved environment and not setup listener', async () => {
+  test('should initialize with saved environment and not show prompt', async () => {
 
     context.globalState.get.mockReturnValue('/saved/jac/path');
     (envDetection.validateJacExecutable as jest.Mock).mockResolvedValue(true);
@@ -259,23 +259,27 @@ describe('EnvManager (Jest)', () => {
 
     expect(envDetection.validateJacExecutable).toHaveBeenCalledWith('/saved/jac/path');
     expect((envManager as any).statusBar.text).toContain('Jac');
-    expect((envManager as any).hasPromptedThisSession).toBe(false);
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
   });
 
   /**
    * TEST 8: Initialization handles invalid saved environment
    *
    * - Invalid saved environments are detected and cleared
-   * - User is warned about the invalid environment
+   * - showEnvironmentPrompt is called after invalid env is cleared
    */
   test('should handle invalid saved environment during init', async () => {
     context.globalState.get.mockReturnValue('/invalid/jac/path');
     (envDetection.validateJacExecutable as jest.Mock).mockResolvedValue(false);
+    (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue([]);
     (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
 
     await envManager.init();
 
     expect(context.globalState.update).toHaveBeenCalledWith('jacEnvPath', undefined);
+    expect((envManager as any).statusBar.text).toContain('No Env');
+    expect(vscode.window.showWarningMessage).toHaveBeenCalled();
   });
 
   /**
@@ -378,79 +382,7 @@ describe('EnvManager (Jest)', () => {
   });
 
   /**
-   * TEST 14: hasPromptedThisSession flag prevents duplicate prompts
-   *
-   * - Flag is set to true when .jac file is first opened
-   * - Prevents showing prompt multiple times in same session
-   * - User opening multiple .jac files won't trigger multiple prompts
-   */
-  test("hasPromptedThisSession flag prevents duplicate prompts", async () => {
-    context.globalState.get.mockReturnValue(undefined);
-    (vscode.workspace.textDocuments as any) = [];
-    (vscode.workspace.onDidOpenTextDocument as jest.Mock).mockReturnValue(jest.fn());
-
-    // Flag starts as false
-    expect((envManager as any).hasPromptedThisSession).toBe(false);
-
-    await envManager.init();
-
-    // After init, flag should still be false (since no .jac doc opened)
-    expect((envManager as any).hasPromptedThisSession).toBe(false);
-
-    // Now simulate opening a .jac file when no env is set
-    (vscode.workspace.textDocuments as any) = [
-      { languageId: 'jac', fileName: 'test.jac' }
-    ];
-    (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue(['/path/to/jac']);
-    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Select Environment');
-
-    await (envManager as any).setupJacFileOpenListener();
-
-    // After showing prompt, flag should be true
-    expect((envManager as any).hasPromptedThisSession).toBe(true);
-  });
-
-  /**
-   * TEST 15: setupJacFileOpenListener detects existing open .jac documents
-   *
-   * - Listener checks for existing open .jac documents on setup
-   * - Shows prompt if .jac document found and no env selected
-   * - Does not prompt if already prompted in this session
-   */
-  test("setupJacFileOpenListener shows prompt for existing .jac documents", async () => {
-    context.globalState.get.mockReturnValue(undefined);
-    (vscode.workspace.textDocuments as any) = [
-      { languageId: 'jac', fileName: 'test.jac' }
-    ];
-    (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue(['/path/to/jac']);
-    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Select Environment');
-
-    await (envManager as any).setupJacFileOpenListener();
-
-    expect(vscode.window.showInformationMessage).toHaveBeenCalled();
-    expect((envManager as any).hasPromptedThisSession).toBe(true);
-  });
-
-  /**
-   * TEST 16: setupJacFileOpenListener registers listener for new documents
-   *
-   * - Listener is registered for onDidOpenTextDocument event
-   * - When new .jac file is opened, prompt is shown
-   * - Flag prevents duplicate prompts
-   */
-  test("setupJacFileOpenListener registers onDidOpenTextDocument listener", async () => {
-    context.globalState.get.mockReturnValue(undefined);
-    (vscode.workspace.textDocuments as any) = [];
-    (vscode.workspace.onDidOpenTextDocument as jest.Mock).mockReturnValue(jest.fn());
-
-    await (envManager as any).setupJacFileOpenListener();
-
-    expect(vscode.workspace.onDidOpenTextDocument).toHaveBeenCalled();
-    expect(context.subscriptions.length).toBeGreaterThan(0);
-  });
-
-  /**
-   * TEST 17: showEnvironmentPrompt with found environments
+   * TEST 14: showEnvironmentPrompt with found environments
    *
    * - Shows information message when environments are found
    * - Offers to select environment
@@ -478,38 +410,4 @@ describe('EnvManager (Jest)', () => {
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
   });
 
-  /**
-   * TEST 18: Switching between multiple .jac files doesn't show prompt twice
-   *
-   * - Opening first .jac file shows the prompt
-   * - Opening second .jac file should NOT show prompt again
-   * - hasPromptedThisSession flag prevents duplicate prompts
-   */
-  test("switching between .jac files shows prompt only once", async () => {
-    context.globalState.get.mockReturnValue(undefined);
-    (envDetection.findPythonEnvsWithJac as jest.Mock).mockResolvedValue(['/path/to/jac']);
-    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Select Environment');
-
-    // Set up listener and capture callback
-    let listenerCallback: any;
-    (vscode.workspace.onDidOpenTextDocument as jest.Mock).mockImplementation((cb) => {
-      listenerCallback = cb;
-      return { dispose: jest.fn() };
-    });
-    (vscode.workspace.textDocuments as any) = [];
-
-    await (envManager as any).setupJacFileOpenListener();
-
-    // Simulate opening FIRST .jac file
-    const firstJacFile = { languageId: 'jac', fileName: 'file1.jac' };
-    await listenerCallback(firstJacFile);
-
-    // Simulate opening SECOND .jac file
-    const secondJacFile = { languageId: 'jac', fileName: 'file2.jac' };
-    await listenerCallback(secondJacFile);
-
-    // Verify prompt was shown only ONCE (not twice)
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledTimes(1);
-    expect((envManager as any).hasPromptedThisSession).toBe(true);
-  });
 });

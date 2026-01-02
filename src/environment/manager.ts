@@ -8,7 +8,6 @@ export class EnvManager {
     private context: vscode.ExtensionContext;
     private statusBar: vscode.StatusBarItem;
     private jacPath: string | undefined;
-    private hasPromptedThisSession = false;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -28,29 +27,10 @@ export class EnvManager {
         await this.validateAndClearIfInvalid();  // Validate and clear if invalid
 
         if (!this.jacPath) {
-            this.setupJacFileOpenListener(); // Don't block - show notification when .jac file is opened
+            await this.showEnvironmentPrompt(); // Show prompt immediately when extension activates
         }
 
         this.updateStatusBar();
-    }
-
-    private async setupJacFileOpenListener() {
-        // Check existing open documents
-        const jacDoc = vscode.workspace.textDocuments.find(doc => doc.languageId === 'jac');
-        if (jacDoc && !this.hasPromptedThisSession) {
-            this.hasPromptedThisSession = true;
-            await this.showEnvironmentPrompt();
-        }
-
-        // Listen for new documents being opened
-        this.context.subscriptions.push(
-            vscode.workspace.onDidOpenTextDocument(async (document) => {
-                if (!this.jacPath && document.languageId === 'jac' && !this.hasPromptedThisSession) {
-                    this.hasPromptedThisSession = true;
-                    await this.showEnvironmentPrompt();
-                }
-            })
-        );
     }
 
     private async showEnvironmentPrompt() {
@@ -112,6 +92,8 @@ export class EnvManager {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
             await this.validateAndClearIfInvalid(); // Validate current environment before showing picker
 
+            await this.validateAndClearIfInvalid();// Validate current environment before showing picker
+
             // Instant environment discovery - no progress dialogs needed!
             const envs = await findPythonEnvsWithJac(workspaceRoot);
 
@@ -140,7 +122,7 @@ export class EnvManager {
 
                 const detectedItems = envs.map(env => {
                     const isGlobal = env === 'jac' || env === 'jac.exe' ||
-                        pathPartsFromEnv.some(dir => path.join(dir, path.basename(env)) === env);
+                        pathPartsFromEnv.some(dir =>path.join(dir, path.basename(env)) === env);
 
                     let displayName = '';
 
@@ -186,7 +168,7 @@ export class EnvManager {
 
             // Show QuickPick
             const choice = await vscode.window.showQuickPick(quickPickItems, {
-                placeHolder: envs.length > 0 ? `Select Jac environment (${envs.length} found)`: 'Select Jac environment (none detected yet)',
+                placeHolder: envs.length > 0 ? `Select Jac environment (${envs.length} found)` : 'Select Jac environment (none detected yet)',
                 matchOnDescription: true,
                 matchOnDetail: true,
                 ignoreFocusOut: true
