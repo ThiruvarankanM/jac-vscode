@@ -42,7 +42,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             // Mock the environment prompts to prevent blocking during test
             vscode.window.showWarningMessage = async () => undefined as any;
             vscode.window.showInformationMessage = async () => undefined as any;
-            
+
             // Activate extension and get EnvManager for testing
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
             await ext!.activate();
