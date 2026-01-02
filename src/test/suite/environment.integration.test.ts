@@ -285,7 +285,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             // Navigate to .venv option in quick pick menu
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
             await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
-            
+
             // Confirm selection
             await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
             await new Promise(resolve => setTimeout(resolve, 1500));
