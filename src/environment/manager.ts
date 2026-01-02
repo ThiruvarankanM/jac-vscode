@@ -88,6 +88,8 @@ export class EnvManager {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
             await this.validateAndClearIfInvalid(); // Validate current environment before showing picker
 
+            await this.validateAndClearIfInvalid();// Validate current environment before showing picker
+
             // Instant environment discovery - no progress dialogs needed!
             const envs = await findPythonEnvsWithJac(workspaceRoot);
 
