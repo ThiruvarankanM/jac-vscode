@@ -25,14 +25,7 @@ export class EnvManager {
         this.updateStatusBar();
 
         // Validate existing path if present
-        if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
-            vscode.window.showWarningMessage(
-                `The previously selected Jac environment is no longer valid`
-);
-            this.jacPath = undefined;
-            await this.context.globalState.update('jacEnvPath', undefined);
-            this.updateStatusBar(); // Update after clearing invalid path
-        }
+        await this.validateAndClearIfInvalid();
 
         if (!this.jacPath) {
             await this.promptEnvironmentSelection();
@@ -59,9 +52,20 @@ export class EnvManager {
         return process.platform === 'win32' ? 'python.exe' : 'python';
     }
 
+    //Validates the current environment and clears it if invalid
+    private async validateAndClearIfInvalid(): Promise<void> {
+        if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
+            this.jacPath = undefined;
+            await this.context.globalState.update('jacEnvPath', undefined);
+            this.updateStatusBar();
+        }
+    }
+
     async promptEnvironmentSelection() {
         try {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+
+            await this.validateAndClearIfInvalid();// Validate current environment before showing picker
 
             // Instant environment discovery - no progress dialogs needed!
             const envs = await findPythonEnvsWithJac(workspaceRoot);
