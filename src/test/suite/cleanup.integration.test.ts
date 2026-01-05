@@ -50,27 +50,7 @@ describe('Cleanup Integration Tests - Environment Teardown', () => {
             expect(dirExists).to.be.false;
         });
 
-        it('should remove temporary test files', async function () {
-            this.timeout(10_000);
 
-            // Clean up any temporary test files created during LSP tests
-            const testFiles = [
-                'test_lsp_features.jac',
-                'hover.jac',
-            ];
-
-            for (const fileName of testFiles) {
-                const filePath = path.join(workspacePath, fileName);
-                try {
-                    const exists = await fileExists(filePath);
-                    if (exists) {
-                        await fs.rm(filePath);
-                    }
-                } catch (error) {
-                    // File might already be deleted, that's fine
-                }
-            }
-        });
 
         it('should verify test workspace is clean', async function () {
             this.timeout(10_000);
