@@ -1,13 +1,13 @@
 /**
  * JAC Language Extension - LSP Integration Test Suite
- * 
+ *
  * Tests Language Server Protocol (LSP) specific functionality:
- * 
+ *
  * Test Group 1: LSP Initialization and Startup
  *   - LSP manager availability
  *   - Status bar updates with active environment
  *   - Output channel creation and logging
- * 
+ *
  * Test Group 2: LSP Features (Code Intelligence)
  *   - Diagnostics: Error/warning detection for invalid JAC syntax
  *   - Hover: Hover information display for node definitions
@@ -46,7 +46,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         expect(folders?.length).to.be.greaterThan(0);
         workspacePath = folders![0].uri.fsPath;
         venvPath = path.join(workspacePath, '.venv');
-        
+
         // Platform-specific jac path
         jacExePath = process.platform === 'win32'
             ? path.join(venvPath, 'Scripts', 'jac.exe')
@@ -55,7 +55,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
 
     /**
      * Test Group 1: LSP Initialization and Startup
-     * 
+     *
      * Tests that LSP starts correctly when jac environment is available
      * and provides access to the output channel.
      */
@@ -114,7 +114,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
 
     /**
      * Test Group 2: LSP Features (Code Intelligence)
-     * 
+     *
      * Tests LSP-specific code intelligence features:
      * - Diagnostics detection
      * - Hover information
@@ -125,7 +125,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         before(async () => {
             // Create a test JAC file with INVALID syntax for LSP to catch errors
             testJacFile = path.join(workspacePath, 'test_lsp_features.jac');
-            
+
             const jacCode = `node Bus{
     has bus_type: str:
     has bus_id: str:
@@ -178,7 +178,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
 
             // Should detect syntax errors (colons instead of semicolons)
             expect(diagnostics.length).to.be.greaterThan(0);
-            
+
             // Verify at least one error is reported
             const hasErrors = diagnostics.some(d => d.severity === vscode.DiagnosticSeverity.Error);
             expect(hasErrors).to.be.true;
@@ -188,37 +188,37 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             this.timeout(10_000);
             const file = path.join(workspacePath, 'hover.jac');
             await fs.writeFile(file, `node Bus {}`);
-            
+
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
             await vscode.window.showTextDocument(doc);
-            
+
             // Wait for language server to fully initialize and index the document
             await new Promise(resolve => setTimeout(resolve, 3000));
-            
+
             // Position inside "Bus" - the "u" character
             const position = new vscode.Position(0, 6);
-            
+
             // Query hover provider
             const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
                 'vscode.executeHoverProvider',
                 doc.uri,
                 position
             );
-            
+
             // Debug: log what we got
             console.log('Hovers received:', hovers);
-            
+
             // Assertions
             expect(hovers).to.exist;
             expect(hovers?.length).to.be.greaterThan(0);
-            
+
             const content = hovers![0].contents
                 .map(c => typeof c === 'string' ? c : c.value)
                 .join('\n');
-            
+
             console.log('Hover content:', content);
             expect(content).to.include('Bus');
-            
+
             // Cleanup
             await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             await fs.unlink(file);

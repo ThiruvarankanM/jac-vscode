@@ -1,10 +1,10 @@
 /**
  * JAC Language Extension - Cleanup Integration Test
- * 
+ *
  * Runs LAST to clean up the virtual environment created during tests.
  * This file must run after all other integration tests to ensure
  * the test workspace is clean for the next test run.
- * 
+ *
  * NOTE: This test must run AFTER environment.integration.test.ts and lsp.integration.test.ts
  */
 
