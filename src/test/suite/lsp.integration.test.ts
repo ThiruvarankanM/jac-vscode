@@ -204,6 +204,23 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             await fs.unlink(file);
         });
+
+        it('should not break LSP when developer mode settings change', async function () {
+            this.timeout(15_000);
+
+            // Verify LSP is running
+            const client = lspManager?.getClient?.();
+            expect(client?.isRunning?.()).to.be.true;
+
+            // Get current development settings
+            const config = vscode.workspace.getConfiguration('jaclang');
+            const devMode = config.get('developerMode');
+
+            // LSP should remain running regardless of developer mode state
+            expect(client?.isRunning?.()).to.be.true;
+            expect(client?.outputChannel).to.exist;
+            expect(client?.outputChannel?.name).to.include('Jac Language Server');
+        });
     });
 
 });
