@@ -34,8 +34,6 @@ async function fileExists(filePath: string) {
 
 describe('LSP Integration Tests - Language Server Protocol', () => {
     let workspacePath: string;
-    let venvPath: string;
-    let jacExePath: string;
     let lspManager: any;
     let envManager: any;
 
@@ -45,12 +43,6 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         expect(folders).to.exist;
         expect(folders?.length).to.be.greaterThan(0);
         workspacePath = folders![0].uri.fsPath;
-        venvPath = path.join(workspacePath, '.venv');
-
-        // Platform-specific jac path
-        jacExePath = process.platform === 'win32'
-            ? path.join(venvPath, 'Scripts', 'jac.exe')
-            : path.join(venvPath, 'bin', 'jac');
     });
 
     /**
