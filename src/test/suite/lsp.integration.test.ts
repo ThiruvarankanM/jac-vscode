@@ -5,7 +5,6 @@
  *
  * Test Group 1: LSP Initialization and Startup
  *   - LSP manager availability
- *   - Status bar updates with active environment
  *   - Output channel creation and logging
  *
  * Test Group 2: LSP Features (Code Intelligence)
