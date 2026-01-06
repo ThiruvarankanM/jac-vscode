@@ -43,12 +43,22 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             vscode.window.showWarningMessage = async () => undefined as any;
             vscode.window.showInformationMessage = async () => undefined as any;
 
-            // Activate extension and get EnvManager for testing
+            // Get extension reference (not yet activated)
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
-            await ext!.activate();
-            const exports = ext!.exports;
-            envManager = exports?.getEnvManager?.();
-            expect(envManager, 'EnvManager should be exposed').to.exist;
+            expect(ext).to.exist;
+            expect(ext!.isActive).to.be.false; // Should not be active before opening .jac file
+            
+            // Open sample.jac file - this should trigger auto-activation via onLanguage:jac activation event
+            const filePath = path.join(workspacePath, 'sample.jac');
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+            await vscode.window.showTextDocument(doc);
+            
+            // Wait for activation to complete
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // Verify extension auto-activated after opening .jac file
+            expect(ext!.isActive).to.be.true; // Should now be active
+            
         });
 
         afterEach(async () => {
@@ -175,8 +185,9 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
                 : path.join(venvPath, 'bin', 'jac');
 
             // Get environment manager for status bar verification
+            // Extension should already be active from Phase 1 (opened sample.jac file)
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
-            await ext!.activate();
+            expect(ext!.isActive).to.be.true; // Should still be active from Phase 1
             const exports = ext!.exports;
             envManager = exports?.getEnvManager?.();
         });
