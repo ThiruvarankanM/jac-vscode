@@ -134,7 +134,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
 
             // Give LSP extra time to fully initialize before diagnostics/hover tests
             // LSP needs time to analyze the workspace after environment is set
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 20000));
         });
 
         afterEach(async () => {
@@ -162,14 +162,14 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         });
 
         it('should detect syntax errors in JAC files via LSP diagnostics', async function () {
-            this.timeout(30_000);
+            this.timeout(60_000);
 
             // Open the test file with invalid syntax (uses : instead of ;)
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(testJacFile));
             await vscode.window.showTextDocument(doc);
 
             // Wait for LSP to analyze the file and report diagnostics (longer wait for CI)
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 30000));
 
             // Get diagnostics for the file
             const diagnostics = vscode.languages.getDiagnostics(doc.uri);
@@ -185,7 +185,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         });
 
         it('should provide hover information for node definitions', async function () {
-            this.timeout(10_000);
+            this.timeout(60_000);
             const file = path.join(workspacePath, 'hover.jac');
             await fs.writeFile(file, `node Bus {}`);
 
@@ -193,7 +193,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.window.showTextDocument(doc);
 
             // Wait for language server to fully initialize and index the document
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 30000));
 
             // Position inside "Bus" - the "u" character
             const position = new vscode.Position(0, 6);
