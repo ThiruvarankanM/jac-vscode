@@ -13,6 +13,18 @@ import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
+/**
+ * Check if a file or directory exists (HELPER FUNCTION)
+ */
+async function fileExists(filePath: string) {
+    try {
+        await fs.stat(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 describe('Cleanup Integration Tests - Environment Teardown', () => {
     let workspacePath: string;
     let temporaryVenvDirectory: string;
@@ -66,18 +78,3 @@ describe('Cleanup Integration Tests - Environment Teardown', () => {
     });
 });
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Check if a file or directory exists
- */
-async function fileExists(filePath: string) {
-    try {
-        await fs.stat(filePath);
-        return true;
-    } catch {
-        return false;
-    }
-}
