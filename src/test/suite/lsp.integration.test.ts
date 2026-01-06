@@ -238,7 +238,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
 
             // Toggle developer mode
             await config.update('developerMode', !currentDevMode, vscode.ConfigurationTarget.Global);
-            
+
             // Wait for any potential LSP side effects
             await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -246,7 +246,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             expect(client?.isRunning?.()).to.be.true;
             expect(client?.outputChannel).to.exist;
             expect(client?.outputChannel?.name).to.include('Jac Language Server');
-            
+
             // Restore original setting
             await config.update('developerMode', currentDevMode, vscode.ConfigurationTarget.Global);
         });
