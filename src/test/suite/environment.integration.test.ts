@@ -47,18 +47,18 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
             expect(ext).to.exist;
             expect(ext!.isActive).to.be.false; // Should not be active before opening .jac file
-            
+
             // Open sample.jac file - this should trigger auto-activation via onLanguage:jac activation event
             const filePath = path.join(workspacePath, 'sample.jac');
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
             await vscode.window.showTextDocument(doc);
-            
+
             // Wait for activation to complete
             await new Promise(resolve => setTimeout(resolve, 1500));
-            
+
             // Verify extension auto-activated after opening .jac file
             expect(ext!.isActive).to.be.true; // Should now be active
-            
+
         });
 
         afterEach(async () => {
