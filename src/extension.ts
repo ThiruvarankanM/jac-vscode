@@ -53,8 +53,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     return {
-        getEnvManager: () => envManager,
-        getLspManager: () => lspManager
+        getEnvManager: () => envManager
     };
   } catch (error) {
     console.error("Extension activation error:", error);
