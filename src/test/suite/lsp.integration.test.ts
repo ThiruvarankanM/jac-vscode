@@ -125,7 +125,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         before(async function () {
             this.timeout(40000);
             // Create a test JAC file with INVALID syntax for LSP to catch errors
-            testJacFile = path.join(workspacePath, 'test_lsp_features.jac');
+            testJacFile = path.join(workspacePath, 'syntax.jac');
 
             const jacCode = `node Bus{
     has bus_type: str:
@@ -146,7 +146,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         after(async () => {
             // Clean up test files created by this test group
             const testFiles = [
-                path.join(workspacePath, 'test_lsp_features.jac'),
+                path.join(workspacePath, 'syntax.jac'),
                 path.join(workspacePath, 'hover.jac')
             ];
 
