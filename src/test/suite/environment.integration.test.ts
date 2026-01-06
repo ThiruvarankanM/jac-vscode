@@ -60,11 +60,11 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
             // Verify extension auto-activated after opening .jac file
             expect(ext!.isActive).to.be.true; // Should now be active
-            
+
             // Verify document was opened successfully and language is detected
             expect(doc.languageId).to.equal('jac');
             expect(vscode.window.activeTextEditor?.document).to.equal(doc);
-            
+
             // Get EnvManager for status bar verification in tests
             const exports = ext!.exports;
             envManager = exports?.getEnvManager?.();
