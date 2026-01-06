@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { spawn } from 'child_process';
+import { runCommand, fileExists, detectPython } from './testUtils';
 
 describe('Extension Integration Tests - Full Lifecycle', () => {
     let workspacePath: string;
@@ -99,58 +99,6 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         let pythonCmd: { cmd: string; argsPrefix: string[] };
         let venvPythonPath = '';
         let jacExePath = '';
-
-        /**
-         * Runs a command and captures what happened
-         * Returns: whether it succeeded, what it printed, and any errors
-         */
-        async function runCommand(cmd: string, args: string[]) {
-            return await new Promise<{ code: number; commandOutput: string; commandError: string }>((resolve, reject) => {
-                const childProcess = spawn(cmd, args, { shell: false });
-                let commandOutput = '';
-                let commandError = '';
-                childProcess.stdout.on('data', (data) => (commandOutput += data.toString()));
-                childProcess.stderr.on('data', (data) => (commandError += data.toString()));
-                childProcess.on('error', reject);
-                childProcess.on('close', (code) => resolve({ code: code ?? 0, commandOutput, commandError }));
-            });
-        }
-
-        /**
-         * Checks if a file or folder exists at the given path
-         * Returns: true if it exists, false if it doesn't
-         */
-        async function fileExists(filePath: string) {
-            try {
-                await fs.stat(filePath);
-                return true;
-            } catch {
-                return false;
-            }
-        }
-
-        /**
-         * Finds which Python command works on local (Windows, Mac, or Linux)
-         * Different systems have different Python commands, so we try them one by one
-         * Returns: the Python command that works, or null if Python is not installed
-         */
-        async function detectPython(): Promise<{ cmd: string; argsPrefix: string[] } | null> {
-            if (process.platform === 'win32') {
-                try {
-                    const versionCheckResult = await runCommand('py', ['-3', '--version']);
-                    if (versionCheckResult.code === 0) return { cmd: 'py', argsPrefix: ['-3'] };
-                } catch { }
-            }
-            try {
-                const versionCheckResult = await runCommand('python3', ['--version']);
-                if (versionCheckResult.code === 0) return { cmd: 'python3', argsPrefix: [] };
-            } catch { }
-            try {
-                const versionCheckResult = await runCommand('python', ['--version']);
-                if (versionCheckResult.code === 0) return { cmd: 'python', argsPrefix: [] };
-            } catch { }
-            return null;
-        }
 
         before(async function () {
             this.timeout(10_000);
