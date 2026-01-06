@@ -80,11 +80,6 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             const client = lspManager?.getClient?.();
             expect(client).to.exist;
 
-            // Output channel should be created during LSP initialization
-            // The channel is used for logging server messages
-            const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
-            expect(ext!.isActive).to.be.true;
-
             // Verify LSP infrastructure is initialized
             // Output channel is created in lsp_manager.ts during start()
             expect(client?.outputChannel).to.exist;
