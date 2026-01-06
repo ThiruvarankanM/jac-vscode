@@ -16,20 +16,7 @@ import * as vscode from 'vscode';
 import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-
-
-
-/**
- * Check if a file or directory exists (Helper Function)
- */
-async function fileExists(filePath: string) {
-    try {
-        await fs.stat(filePath);
-        return true;
-    } catch {
-        return false;
-    }
-}
+import { fileExists } from './testUtils';
 
 describe('LSP Integration Tests - Language Server Protocol', () => {
     let workspacePath: string;
@@ -144,7 +131,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.window.showTextDocument(doc);
 
             // Wait for LSP to analyze the file and report diagnostics (longer wait for CI)
-            await new Promise(resolve => setTimeout(resolve, 30000));
+            await new Promise(resolve => setTimeout(resolve, 10000));
 
             // Get diagnostics for the file
             const diagnostics = vscode.languages.getDiagnostics(doc.uri);
@@ -168,7 +155,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.window.showTextDocument(doc);
 
             // Wait for language server to fully initialize and index the document
-            await new Promise(resolve => setTimeout(resolve, 30000));
+            await new Promise(resolve => setTimeout(resolve, 10000));
 
             // Position inside "Bus" - the "u" character
             const position = new vscode.Position(0, 6);
