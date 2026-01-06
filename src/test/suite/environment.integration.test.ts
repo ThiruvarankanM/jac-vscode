@@ -72,15 +72,15 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             expect(languages).to.include('jac');
         });
 
-        it('should trigger environment prompt when opening .jac file without env selected', async function () {
+        it('should open .jac file and recognize language correctly', async function () {
             this.timeout(10_000);
 
-            // Opening a .jac file without environment should trigger a prompt
+            // Open a .jac file and verify it's recognized by the extension
             const filePath = path.join(workspacePath, 'sample.jac');
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
             await vscode.window.showTextDocument(doc);
 
-            // Verify document was opened successfully
+            // Verify document was opened successfully and language is detected
             expect(doc.languageId).to.equal('jac');
             expect(vscode.window.activeTextEditor?.document).to.equal(doc);
         });
