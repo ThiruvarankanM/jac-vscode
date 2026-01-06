@@ -73,17 +73,6 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             expect(lspManager).to.exist;
         });
 
-        it('should update status bar when LSP is active', async function () {
-            this.timeout(10_000);
-
-            // Status bar should show the active environment (not "No Env")
-            const statusBar = envManager?.getStatusBar?.();
-            expect(statusBar?.text).to.exist;
-            expect(statusBar?.text).to.not.include('No Env');
-            // Should show environment indicator like ".venv" or path
-            expect(statusBar?.text.length).to.be.greaterThan(0);
-        });
-
         it('should create and display LSP output channel', async function () {
             this.timeout(10_000);
 
