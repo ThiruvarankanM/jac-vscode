@@ -61,9 +61,8 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
      */
     describe('Test Group 1: LSP Initialization and Startup', () => {
         before(async () => {
-            // Get extension and managers
+            // Get extension and managers (extension already activated in environment tests)
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
-            await ext!.activate();
             const exports = ext!.exports;
             envManager = exports?.getEnvManager?.();
             lspManager = exports?.getLspManager?.();
