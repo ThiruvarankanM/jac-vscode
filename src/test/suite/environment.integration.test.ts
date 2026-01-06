@@ -2,7 +2,8 @@
  * JAC Language Extension - Integration Test Suite
  *
  * Tests the complete lifecycle of the Jaclang extension:
- * - Phase 1: Extension initialization and language registration
+ * - Phase 1: Extension auto-activation and initialization
+ *   (Verifies extension loads when .jac file is opened, language detection, status bar)
  * - Phase 2: Complete environment lifecycle (venv creation, jaclang installation,
  *            environment detection & selection, cleanup & verification)
  *
@@ -27,21 +28,22 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
     });
 
     /**
-     * PHASE 1: Initial Extension State - No Environment
+     * PHASE 1: Extension Auto-Activation and Initialization
      *
-     * Verifies the extension loads correctly without any environment configured:
-     * - Status bar shows "No Env"
-     * - JAC language is registered
-     * - Opening .jac files triggers environment prompt
+     * Verifies the extension auto-activates when a .jac file is opened:
+     * - Extension is NOT active before opening .jac file
+     * - Opening .jac file triggers auto-activation (onLanguage:jac event)
+     * - JAC language is properly registered and detected
+     * - Status bar shows "No Env" when no environment is configured
      */
-    describe('Phase 1: Initial Extension State - No Environment', () => {
+    describe('Phase 1: Extension Auto-Activation and Initialization', () => {
         let envManager: any;
 
         before(async function () {
             this.timeout(30_000);
+
             // Mock the environment prompts to prevent blocking during test
             vscode.window.showWarningMessage = async () => undefined as any;
-            vscode.window.showInformationMessage = async () => undefined as any;
 
             // Get extension reference (not yet activated)
             const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
@@ -58,7 +60,15 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
 
             // Verify extension auto-activated after opening .jac file
             expect(ext!.isActive).to.be.true; // Should now be active
-
+            
+            // Verify document was opened successfully and language is detected
+            expect(doc.languageId).to.equal('jac');
+            expect(vscode.window.activeTextEditor?.document).to.equal(doc);
+            
+            // Get EnvManager for status bar verification in tests
+            const exports = ext!.exports;
+            envManager = exports?.getEnvManager?.();
+            expect(envManager, 'EnvManager should be exposed').to.exist;
         });
 
         afterEach(async () => {
@@ -72,28 +82,6 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             expect(statusBar.text).to.include('No Env');
         });
 
-        it('should load extension and register jac language', async () => {
-            // Extension should be active and JAC language properly registered
-            const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
-            expect(ext).to.exist;
-            expect(ext!.isActive).to.be.true;
-
-            const languages = await vscode.languages.getLanguages();
-            expect(languages).to.include('jac');
-        });
-
-        it('should open .jac file and recognize language correctly', async function () {
-            this.timeout(10_000);
-
-            // Open a .jac file and verify it's recognized by the extension
-            const filePath = path.join(workspacePath, 'sample.jac');
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-            await vscode.window.showTextDocument(doc);
-
-            // Verify document was opened successfully and language is detected
-            expect(doc.languageId).to.equal('jac');
-            expect(vscode.window.activeTextEditor?.document).to.equal(doc);
-        });
     });
 
 
