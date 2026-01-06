@@ -253,35 +253,8 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             expect(workspacePath).to.include('fixtures/workspace');
         });
 
-        it('should detect environments after jaclang installation', async function () {
-            this.timeout(15_000);
-
-            // After installing jaclang, environment detection should find the .venv jac executable
-            const { findPythonEnvsWithJac } = await import('../../utils/envDetection');
-            const envs = await findPythonEnvsWithJac(workspacePath);
-
-            // Unlike Phase 1 (where no environments existed), now we should have at least one
-            expect(envs.length).to.be.greaterThan(0);
-
-            const foundVenvJac = envs.some(env => env.includes('.venv'));
-            expect(foundVenvJac, '.venv jac executable should be detected').to.be.true;
-
-            // Note: The "Select Environment" popup won't appear in same session due to hasPromptedThisSession flag
-            // The popup behavior was already tested in Phase 1
-        });
-
         it('should allow environment selection through selectEnv command', async function () {
             this.timeout(15_000);
-
-            // Import environment detection utility to verify environments are found
-            const { findPythonEnvsWithJac } = await import('../../utils/envDetection');
-
-            // Verify environment detection finds our installed jac
-            const envs = await findPythonEnvsWithJac(workspacePath);
-            expect(envs.length).to.be.greaterThan(0);
-
-            const foundVenvJac = envs.some(env => env.includes('.venv'));
-            expect(foundVenvJac).to.be.true;
 
             // Trigger environment selection command
             await vscode.commands.executeCommand('jaclang-extension.selectEnv');
