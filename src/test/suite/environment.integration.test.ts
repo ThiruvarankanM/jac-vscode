@@ -156,7 +156,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         }
 
         before(async function () {
-            this.timeout(30_000);
+            this.timeout(10_000);
             // Initialize paths and environment manager
             const detectedPython = await detectPython();
             if (!detectedPython) {
@@ -204,7 +204,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         });
 
         it('should create Python virtual environment', async function () {
-            this.timeout(30_000);
+            this.timeout(10_000);
 
             // Create isolated virtual environment where jaclang will be installed
             //recursive: true prevents errors if .venv already exists from a previous incomplete test run.
@@ -217,7 +217,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         });
 
         it('should install jaclang package via pip with terminal feedback', async function () {
-            this.timeout(300_000);
+            this.timeout(5_000);
 
             // Display terminal window for visual installation feedback
             const terminal = vscode.window.createTerminal({
@@ -249,14 +249,14 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         // === ENVIRONMENT DETECTION & SELECTION PHASE ===
 
         it('should have venv jac binary available in test environment', async function () {
-            this.timeout(15_000);
+            this.timeout(5_000);
 
             // Verify test workspace structure contains expected fixtures
             expect(workspacePath).to.include('fixtures/workspace');
         });
 
         it('should allow environment selection through selectEnv command', async function () {
-            this.timeout(15_000);
+            this.timeout(5_000);
 
             // Trigger environment selection command
             await vscode.commands.executeCommand('jaclang-extension.selectEnv');
@@ -293,7 +293,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         // === CLEANUP & VERIFICATION PHASE ===
 
         it('should uninstall jaclang from venv', async function () {
-            this.timeout(60_000);
+            this.timeout(10_000);
 
             // Display terminal window for visual uninstall feedback
             const terminal = vscode.window.createTerminal({
@@ -315,7 +315,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         });
 
         it('should update status bar back to "No Env" after uninstall', async function () {
-            this.timeout(10_000);
+            this.timeout(5_000);
 
             // Trigger environment refresh after uninstall
             await vscode.commands.executeCommand('jaclang-extension.selectEnv');
@@ -330,7 +330,7 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         });
 
         it('should properly clean up venv directory', async function () {
-            this.timeout(10_000);
+            this.timeout(5_000);
 
             // Remove entire virtual environment directory
             if (temporaryVenvDirectory) {
