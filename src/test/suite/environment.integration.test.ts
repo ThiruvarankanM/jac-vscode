@@ -104,8 +104,8 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         let envManager: any;
 
         /**
-         * Execute shell commands and capture output
-         * Returns exit code, stdout, and stderr for verification
+         * Runs a command and captures what happened
+         * Returns: whether it succeeded, what it printed, and any errors
          */
         async function runCommand(cmd: string, args: string[]) {
             return await new Promise<{ code: number; commandOutput: string; commandError: string }>((resolve, reject) => {
@@ -120,7 +120,8 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         }
 
         /**
-         * Check if a file or directory exists
+         * Checks if a file or folder exists at the given path
+         * Returns: true if it exists, false if it doesn't
          */
         async function fileExists(filePath: string) {
             try {
@@ -132,8 +133,9 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
         }
 
         /**
-         * Detect available Python interpreter
-         * Tries: py -3 (Windows), python3, python
+         * Finds which Python command works on local (Windows, Mac, or Linux)
+         * Different systems have different Python commands, so we try them one by one
+         * Returns: the Python command that works, or null if Python is not installed
          */
         async function detectPython(): Promise<{ cmd: string; argsPrefix: string[] } | null> {
             if (process.platform === 'win32') {
