@@ -122,7 +122,8 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
     describe('Test Group 2: LSP Features (Code Intelligence)', () => {
         let testJacFile: string;
 
-        before(async () => {
+        before(async function () {
+            this.timeout(40000);
             // Create a test JAC file with INVALID syntax for LSP to catch errors
             testJacFile = path.join(workspacePath, 'test_lsp_features.jac');
 
@@ -225,20 +226,29 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         });
 
         it('should not break LSP when developer mode settings change', async function () {
-            this.timeout(15_000);
+            this.timeout(30_000);
 
-            // Verify LSP is running
+            // Verify LSP is running before toggling
             const client = lspManager?.getClient?.();
             expect(client?.isRunning?.()).to.be.true;
 
             // Get current development settings
-            const config = vscode.workspace.getConfiguration('jaclang');
-            const devMode = config.get('developerMode');
+            const config = vscode.workspace.getConfiguration('jaclang-extension');
+            const currentDevMode = config.get<boolean>('developerMode', false);
 
-            // LSP should remain running regardless of developer mode state
+            // Toggle developer mode
+            await config.update('developerMode', !currentDevMode, vscode.ConfigurationTarget.Global);
+            
+            // Wait for any potential LSP side effects
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // LSP should remain running after toggling developer mode
             expect(client?.isRunning?.()).to.be.true;
             expect(client?.outputChannel).to.exist;
             expect(client?.outputChannel?.name).to.include('Jac Language Server');
+            
+            // Restore original setting
+            await config.update('developerMode', currentDevMode, vscode.ConfigurationTarget.Global);
         });
     });
 
