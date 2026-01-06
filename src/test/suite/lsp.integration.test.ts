@@ -162,14 +162,14 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         });
 
         it('should detect syntax errors in JAC files via LSP diagnostics', async function () {
-            this.timeout(15_000);
+            this.timeout(30_000);
 
             // Open the test file with invalid syntax (uses : instead of ;)
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(testJacFile));
             await vscode.window.showTextDocument(doc);
 
-            // Wait for LSP to analyze the file and report diagnostics
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Wait for LSP to analyze the file and report diagnostics (longer wait for CI)
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
             // Get diagnostics for the file
             const diagnostics = vscode.languages.getDiagnostics(doc.uri);
