@@ -73,3 +73,11 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             expect(client?.outputChannel?.name).to.include('Jac Language Server');
         });
     });
+
+       /**
+     * Test Group 2: LSP Features (Code Intelligence)
+     *
+     * Tests LSP-specific code intelligence features:
+     * - Diagnostics detection
+     * - Hover information
+     */
