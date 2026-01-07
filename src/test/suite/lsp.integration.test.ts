@@ -52,3 +52,24 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             // Clean up any open editors between tests
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         });
+
+        it('should have LSP manager available when environment is valid', async function () {
+            this.timeout(15_000);
+
+            // LSP manager should be available (single phase check)
+            expect(lspManager).to.exist;
+        });
+
+        it('should create and display LSP output channel', async function () {
+            this.timeout(10_000);
+
+            // Get the LSP client which uses the output channel
+            const client = lspManager?.getClient?.();
+            expect(client).to.exist;
+
+            // Verify LSP infrastructure is initialized
+            // Output channel is created in lsp_manager.ts during start()
+            expect(client?.outputChannel).to.exist;
+            expect(client?.outputChannel?.name).to.include('Jac Language Server');
+        });
+    });
