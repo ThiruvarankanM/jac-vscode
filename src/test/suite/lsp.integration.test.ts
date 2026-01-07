@@ -37,3 +37,18 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
      * Tests that LSP starts correctly when jac environment is available
      * and provides access to the output channel.
      */
+
+    describe('Test Group 1: LSP Initialization and Startup', () => {
+        before(async () => {
+            // Get extension and managers (extension already activated in environment tests)
+            const ext = vscode.extensions.getExtension('jaseci-labs.jaclang-extension');
+            const exports = ext!.exports;
+            envManager = exports?.getEnvManager?.();
+            lspManager = exports?.getLspManager?.();
+            expect(envManager, 'EnvManager should be exposed').to.exist;
+        });
+
+        afterEach(async () => {
+            // Clean up any open editors between tests
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        });
