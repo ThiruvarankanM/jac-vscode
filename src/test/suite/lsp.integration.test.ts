@@ -37,7 +37,6 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
      * Tests that LSP starts correctly when jac environment is available
      * and provides access to the output channel.
      */
-
     describe('Test Group 1: LSP Initialization and Startup', () => {
         before(async () => {
             // Get extension and managers (extension already activated in environment tests)
@@ -74,15 +73,14 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         });
     });
 
-       /**
+    /**
      * Test Group 2: LSP Features (Code Intelligence)
      *
      * Tests LSP-specific code intelligence features:
      * - Diagnostics detection
      * - Hover information
      */
-
-     describe('Test Group 2: LSP Features (Code Intelligence)', () => {
+    describe('Test Group 2: LSP Features (Code Intelligence)', () => {
         let testJacFile: string;
 
         before(async function () {
@@ -101,12 +99,12 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await new Promise(resolve => setTimeout(resolve, 20000));
         });
 
-         afterEach(async () => {
+        afterEach(async () => {
             // Close all editors between tests
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         });
 
-         after(async () => {
+        after(async () => {
             // Clean up test files created by this test group
             const testFiles = [
                 path.join(workspacePath, 'syntax.jac'),
@@ -148,7 +146,7 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             expect(hasErrors).to.be.true;
         });
 
-         it('should provide hover information for node definitions', async function () {
+        it('should provide hover information for node definitions', async function () {
             this.timeout(60_000);
             const file = path.join(workspacePath, 'hover.jac');
             await fs.writeFile(file, `node Bus {}`);
@@ -187,7 +185,8 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             await fs.unlink(file);
         });
-   it('should not break LSP when developer mode settings change', async function () {
+
+        it('should not break LSP when developer mode settings change', async function () {
             this.timeout(30_000);
 
             // Verify LSP is running before toggling
