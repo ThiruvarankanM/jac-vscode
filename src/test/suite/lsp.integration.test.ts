@@ -187,3 +187,31 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             await fs.unlink(file);
         });
+   it('should not break LSP when developer mode settings change', async function () {
+            this.timeout(30_000);
+
+            // Verify LSP is running before toggling
+            const client = lspManager?.getClient?.();
+            expect(client?.isRunning?.()).to.be.true;
+
+            // Get current development settings
+            const config = vscode.workspace.getConfiguration('jaclang-extension');
+            const currentDevMode = config.get<boolean>('developerMode', false);
+
+            // Toggle developer mode
+            await config.update('developerMode', !currentDevMode, vscode.ConfigurationTarget.Global);
+
+            // Wait for any potential LSP side effects
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // LSP should remain running after toggling developer mode
+            expect(client?.isRunning?.()).to.be.true;
+            expect(client?.outputChannel).to.exist;
+            expect(client?.outputChannel?.name).to.include('Jac Language Server');
+
+            // Restore original setting
+            await config.update('developerMode', currentDevMode, vscode.ConfigurationTarget.Global);
+        });
+    });
+
+});
