@@ -11,3 +11,9 @@
  *   - Diagnostics: Error/warning detection for invalid JAC syntax
  *   - Hover: Hover information display for node definitions
  */
+
+import * as vscode from 'vscode';
+import { expect } from 'chai';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import { fileExists } from './testUtils';
