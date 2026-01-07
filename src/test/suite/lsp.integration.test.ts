@@ -30,3 +30,10 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
         expect(folders?.length).to.be.greaterThan(0);
         workspacePath = folders![0].uri.fsPath;
     });
+
+    /**
+     * Test Group 1: LSP Initialization and Startup
+     *
+     * Tests that LSP starts correctly when jac environment is available
+     * and provides access to the output channel.
+     */
