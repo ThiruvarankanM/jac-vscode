@@ -100,3 +100,8 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             // LSP needs time to analyze the workspace after environment is set
             await new Promise(resolve => setTimeout(resolve, 20000));
         });
+
+         afterEach(async () => {
+            // Close all editors between tests
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        });
