@@ -105,3 +105,22 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             // Close all editors between tests
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         });
+
+         after(async () => {
+            // Clean up test files created by this test group
+            const testFiles = [
+                path.join(workspacePath, 'syntax.jac'),
+                path.join(workspacePath, 'hover.jac')
+            ];
+
+            for (const filePath of testFiles) {
+                try {
+                    const exists = await fileExists(filePath);
+                    if (exists) {
+                        await fs.unlink(filePath);
+                    }
+                } catch (error) {
+                    // File might already be deleted, that's fine
+                }
+            }
+        });
