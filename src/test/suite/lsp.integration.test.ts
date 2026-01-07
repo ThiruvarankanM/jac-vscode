@@ -124,3 +124,26 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
                 }
             }
         });
+
+        it('should detect syntax errors in JAC files via LSP diagnostics', async function () {
+            this.timeout(60_000);
+
+            // Open the test file with invalid syntax (uses : instead of ;)
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(testJacFile));
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for LSP to analyze the file and report diagnostics (longer wait for CI)
+            await new Promise(resolve => setTimeout(resolve, 10000));
+
+            // Get diagnostics for the file
+            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+            console.log('Diagnostics:', diagnostics);
+            console.log('Diagnostics count:', diagnostics.length);
+
+            // Should detect syntax errors (colons instead of semicolons)
+            expect(diagnostics.length).to.be.greaterThan(0);
+
+            // Verify at least one error is reported
+            const hasErrors = diagnostics.some(d => d.severity === vscode.DiagnosticSeverity.Error);
+            expect(hasErrors).to.be.true;
+        });
