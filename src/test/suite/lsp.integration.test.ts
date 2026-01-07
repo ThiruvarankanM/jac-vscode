@@ -81,3 +81,22 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
      * - Diagnostics detection
      * - Hover information
      */
+
+     describe('Test Group 2: LSP Features (Code Intelligence)', () => {
+        let testJacFile: string;
+
+        before(async function () {
+            this.timeout(40000);
+            // Create a test JAC file with INVALID syntax for LSP to catch errors
+            testJacFile = path.join(workspacePath, 'syntax.jac');
+
+            const jacCode = `node Bus{
+    has bus_type: str:
+    has bus_id: str:
+}`;
+            await fs.writeFile(testJacFile, jacCode);
+
+            // Give LSP extra time to fully initialize before diagnostics/hover tests
+            // LSP needs time to analyze the workspace after environment is set
+            await new Promise(resolve => setTimeout(resolve, 20000));
+        });
