@@ -17,3 +17,16 @@ import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { fileExists } from './testUtils';
+
+describe('LSP Integration Tests - Language Server Protocol', () => {
+    let workspacePath: string;
+    let lspManager: any;
+    let envManager: any;
+
+    before(() => {
+        // Resolve workspace path from VS Code workspace folders
+        const folders = vscode.workspace.workspaceFolders;
+        expect(folders).to.exist;
+        expect(folders?.length).to.be.greaterThan(0);
+        workspacePath = folders![0].uri.fsPath;
+    });
