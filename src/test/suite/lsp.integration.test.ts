@@ -147,3 +147,43 @@ describe('LSP Integration Tests - Language Server Protocol', () => {
             const hasErrors = diagnostics.some(d => d.severity === vscode.DiagnosticSeverity.Error);
             expect(hasErrors).to.be.true;
         });
+
+         it('should provide hover information for node definitions', async function () {
+            this.timeout(60_000);
+            const file = path.join(workspacePath, 'hover.jac');
+            await fs.writeFile(file, `node Bus {}`);
+
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for language server to fully initialize and index the document
+            await new Promise(resolve => setTimeout(resolve, 10000));
+
+            // Position inside "Bus" - the "u" character
+            const position = new vscode.Position(0, 6);
+
+            // Query hover provider
+            const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+                'vscode.executeHoverProvider',
+                doc.uri,
+                position
+            );
+
+            // Debug: log what we got
+            console.log('Hovers received:', hovers);
+
+            // Assertions
+            expect(hovers).to.exist;
+            expect(hovers?.length).to.be.greaterThan(0);
+
+            const content = hovers![0].contents
+                .map(c => typeof c === 'string' ? c : c.value)
+                .join('\n');
+
+            console.log('Hover content:', content);
+            expect(content).to.include('Bus');
+
+            // Cleanup
+            await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+            await fs.unlink(file);
+        });
