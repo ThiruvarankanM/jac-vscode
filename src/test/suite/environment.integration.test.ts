@@ -155,10 +155,10 @@ describe('Extension Integration Tests - Full Lifecycle', () => {
             });
             terminal.show(true);
 
-            terminal.sendText(`${venvPythonPath} -m pip install jaclang==0.9.3`, true);
+            terminal.sendText(`${venvPythonPath} -m pip install jaclang`, true);
 
             // Execute installation in background
-            const installationResult = await runCommand(venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', 'jaclang==0.9.3']);
+            const installationResult = await runCommand(venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', 'jaclang']);
 
             // Verify installation success
             expect(installationResult.code).to.equal(0);
