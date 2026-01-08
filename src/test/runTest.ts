@@ -40,9 +40,10 @@ async function main() {
 				testWorkspacePath,
 				'--disable-workspace-trust',
 				'--no-sandbox',
-				'--headless',
+				'--disable-gpu',
 			],
 		});
+		
 
 		console.log('✓ Tests completed successfully');
 	} catch (err) {
