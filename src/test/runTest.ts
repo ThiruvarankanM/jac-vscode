@@ -43,7 +43,7 @@ async function main() {
 				'--disable-gpu',
 			],
 		});
-		
+
 
 		console.log('✓ Tests completed successfully');
 	} catch (err) {
