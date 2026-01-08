@@ -26,8 +26,5 @@ jobs:
       - name: Run Unit Tests (Jest)
         run: npm run test:unit
 
-      - name: Install xvfb (virtual display server for Linux)
-        run: sudo apt-get update && sudo apt-get install -y xvfb dbus
-
       - name: Run Integration Tests
-        run: dbus-run-session -- xvfb-run -a npm run test:integration
+        run: npm run test:integration
