@@ -40,8 +40,6 @@ async function main() {
 				testWorkspacePath,
 				'--disable-workspace-trust',
 				'--no-sandbox',
-				'--disable-gpu',
-				'--use-gl=swiftshader',
 			],
 		});
 
