@@ -31,6 +31,4 @@ jobs:
 
       - name: Run Integration Tests
         run: xvfb-run -a npm run test:integration
-        env:
-          ELECTRON_ENABLE_SANDBOX: false
-          DISPLAY: :99
+
