@@ -1,6 +1,6 @@
 /**
  * Platform Helper Functions
- * Platform-specific utilities for handling Python extension installation across WSL, macOS, and GitHub Actions
+ * Platform-specific utilities for handling Python extension installation across WSL, macOS, Linux, and Windows
  */
 
 import { exec, execFile } from 'child_process';
@@ -21,10 +21,14 @@ export function isWSL(): boolean {
 	}
 }
 
+export function isWindows(): boolean {
+	return process.platform === 'win32';
+}
+
 export async function findPythonExtension(): Promise<string | null> {
 	try {
 		const homeDir = process.env.HOME || os.homedir();
-		const systemExtensionsDir = path.join(homeDir, '.vscode-server/extensions');
+		const systemExtensionsDir = path.join(homeDir, isWindows() ? '.vscode\\extensions' : '.vscode-server/extensions');
 		if (!fs.existsSync(systemExtensionsDir)) {
 			return null;
 		}
@@ -42,7 +46,14 @@ export async function copyExtension(source: string, destDir: string): Promise<vo
 	if (!fs.existsSync(destDir)) {
 		fs.mkdirSync(destDir, { recursive: true });
 	}
-	await execAsync(`cp -r "${source}" "${dest}"`);
+	
+	if (isWindows()) {
+		// Use xcopy for Windows
+		await execAsync(`xcopy "${source}" "${dest}" /E /I /Y`);
+	} else {
+		// Use cp for Unix-like systems (macOS, Linux, WSL)
+		await execAsync(`cp -r "${source}" "${dest}"`);
+	}
 }
 
 export { execAsync, execFileAsync };
