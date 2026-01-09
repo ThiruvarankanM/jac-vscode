@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
-import { isWSL, findPythonExtension, copyExtension, execAsync, execFileAsync } from './platformHelper';
+import { isWSL, isWindows, findPythonExtension, copyExtension, execAsync, execFileAsync } from './platformHelper';
 
 async function main() {
 	try {
@@ -21,7 +21,7 @@ async function main() {
 		console.log('Installing dependencies...');
 
 		const wslMode = isWSL();
-		if (wslMode) {
+		if (wslMode || isWindows()) {
 			const pythonExtDir = await findPythonExtension();
 			if (pythonExtDir) {
 				await copyExtension(pythonExtDir, extensionsDir);
