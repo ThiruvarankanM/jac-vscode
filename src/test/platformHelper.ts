@@ -12,6 +12,7 @@ import * as os from 'os';
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+// Detect if running inside Windows Subsystem for Linux
 export function isWSL(): boolean {
 	try {
 		const releaseFile = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
@@ -21,10 +22,14 @@ export function isWSL(): boolean {
 	}
 }
 
+// Detect if running on native Windows
 export function isWindows(): boolean {
 	return process.platform === 'win32';
 }
 
+// Find pre-installed Python extension from system directory
+// WSL/Windows: searches .vscode-server/extensions or .vscode\extensions
+// This avoids slow re-installation in isolated test environments
 export async function findPythonExtension(): Promise<string | null> {
 	try {
 		const homeDir = process.env.HOME || os.homedir();
@@ -40,6 +45,8 @@ export async function findPythonExtension(): Promise<string | null> {
 	}
 }
 
+// Copy extension to isolated test extensions directory
+// Uses platform-specific commands: cp (Unix) or xcopy (Windows)
 export async function copyExtension(source: string, destDir: string): Promise<void> {
 	const extName = path.basename(source);
 	const dest = path.join(destDir, extName);
