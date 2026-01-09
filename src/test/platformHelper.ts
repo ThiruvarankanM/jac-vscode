@@ -53,7 +53,7 @@ export async function copyExtension(source: string, destDir: string): Promise<vo
 	if (!fs.existsSync(destDir)) {
 		fs.mkdirSync(destDir, { recursive: true });
 	}
-	
+
 	if (isWindows()) {
 		// Use xcopy for Windows
 		await execAsync(`xcopy "${source}" "${dest}" /E /I /Y`);
