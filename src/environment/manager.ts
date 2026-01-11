@@ -74,6 +74,10 @@ export class EnvManager {
         return process.platform === 'win32' ? 'python.exe' : 'python';
     }
 
+    getStatusBar(): vscode.StatusBarItem {
+        return this.statusBar;
+    }
+
     //Validates the current environment and clears it if invalid
     private async validateAndClearIfInvalid(): Promise<void> {
         if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
@@ -86,7 +90,6 @@ export class EnvManager {
     async promptEnvironmentSelection() {
         try {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-            await this.validateAndClearIfInvalid(); // Validate current environment before showing picker
 
             await this.validateAndClearIfInvalid();// Validate current environment before showing picker
 
