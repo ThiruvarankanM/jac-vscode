@@ -20,9 +20,20 @@ export async function run(): Promise<void> {
 	return new Promise((resolve, reject) => {
 		glob('suite/**/**.test.js', { cwd: testsRoot })
 			.then((files) => {
-				console.log(`\n🧪 Found ${files.length} test file(s)`);
+				// Define test execution priority (lower number = earlier execution)
+				const getTestPriority = (filename: string): number => {
+					if (filename.includes('environment.integration')) return 1; // First
+					if (filename.includes('lsp.integration')) return 2;        // Middle
+					if (filename.includes('cleanup.integration')) return 3;    // Last
+					return 2; // Default: middle
+				};
 
-				files.forEach(f => {
+				// Sort test files by priority
+				const sortedFiles = files.sort((a, b) => getTestPriority(a) - getTestPriority(b));
+
+				console.log(`\n🧪 Found ${sortedFiles.length} test file(s)`);
+
+				sortedFiles.forEach(f => {
 					const filePath = path.resolve(testsRoot, f);
 					console.log(`   → ${f}`);
 					mocha.addFile(filePath);
@@ -49,4 +60,3 @@ export async function run(): Promise<void> {
 			});
 	});
 }
-
