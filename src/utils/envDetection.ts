@@ -223,7 +223,12 @@ export async function validateJacExecutable(jacPath: string): Promise<boolean> {
     try {
         const { stdout } = await exec(`"${jacPath}" --version`, { timeout: 5000 });
         return stdout.includes('jac') || stdout.includes('Jac');
-    } catch (error) {
+    } catch (error: any) {
+        // Even if command timed out or was killed, check if stdout contains valid output
+        if (error.stdout && (error.stdout.includes('jac') || error.stdout.includes('Jac'))) {
+            return true;
+        }
+        
         return false;
     }
 }

@@ -81,10 +81,14 @@ export class EnvManager {
 
     //Validates the current environment and clears it if invalid
     private async validateAndClearIfInvalid(): Promise<void> {
-        if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
-            this.jacPath = undefined;
-            await this.context.globalState.update('jacEnvPath', undefined);
-            this.updateStatusBar();
+        if (this.jacPath) {
+            const isValid = await validateJacExecutable(this.jacPath);
+            
+            if (!isValid) {
+                this.jacPath = undefined;
+                await this.context.globalState.update('jacEnvPath', undefined);
+                this.updateStatusBar();
+            }
         }
     }
 
