@@ -228,7 +228,7 @@ export async function validateJacExecutable(jacPath: string): Promise<boolean> {
         if (error.stdout && (error.stdout.includes('jac') || error.stdout.includes('Jac'))) {
             return true;
         }
-        
+
         return false;
     }
 }

@@ -83,7 +83,7 @@ export class EnvManager {
     private async validateAndClearIfInvalid(): Promise<void> {
         if (this.jacPath) {
             const isValid = await validateJacExecutable(this.jacPath);
-            
+
             if (!isValid) {
                 this.jacPath = undefined;
                 await this.context.globalState.update('jacEnvPath', undefined);
