@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { promisify } from 'util';
+import { fastValidateJacExecutable } from './jacPathValidator';
 
 const exec = promisify(cp.exec);
 
@@ -216,19 +217,12 @@ async function directoryExists(dirPath: string): Promise<boolean> {
 
 /**
  * Validates if a given Jac executable path is working.
+ * Uses fast file system checks instead of running commands for better performance.
  * @param jacPath The path to the Jac executable to validate.
- * @returns Promise<boolean> True if the executable exists and responds to --version.
+ * @returns Promise<boolean> True if the executable exists and appears valid.
  */
 export async function validateJacExecutable(jacPath: string): Promise<boolean> {
-    try {
-        const { stdout } = await exec(`"${jacPath}" --version`, { timeout: 5000 });
-        return stdout.includes('jac') || stdout.includes('Jac');
-    } catch (error: any) {
-        // Even if command timed out or was killed, check if stdout contains valid output
-        if (error.stdout && (error.stdout.includes('jac') || error.stdout.includes('Jac'))) {
-            return true;
-        }
-
-        return false;
-    }
+    // Use fast validation that checks file existence and structure
+    // This is much faster than running `jac --version` command
+    return await fastValidateJacExecutable(jacPath);
 }
