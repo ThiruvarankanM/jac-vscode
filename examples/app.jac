@@ -15,7 +15,7 @@ cl {
 }
 cl{
 
- def app{
+def app{
     a = <>esc;
 
         fragment = (
@@ -72,5 +72,62 @@ cl{
             <h2>This is a test component</h2>
             <p>It demonstrates component creation in Jac.</p>
         </div>;
+    }
+}
+
+def app{
+    return (
+            <EmailBuddyLayout
+            />
+    );
+}
+
+def _static_bash(commands: list, exe: str) -> str;
+impl _static_bash{}
+
+sem word.cost = "it is a expense";
+
+impl semantic{}
+
+cl {
+    def:pub app() -> any {
+        has count: int = 0;
+
+        return <div>
+            # No parameters
+            <button onClick={lambda -> None { count = count + 1; }}>
+                Increment
+            </button>
+        </div>;
+    }
+}
+
+with entry{
+    process = lambda x: int -> int {
+    doubled = x * 2;
+    result = doubled + 1;
+    return result;
+};
+}
+
+glob enum_semstr = [
+    member.semstr
+    for member in enum_info_to_use.members
+    if member.semstr
+];
+
+"""Implementation of analysis scheduler."""
+
+import from typing { Optional, Callable, Any }
+
+
+impl SchedulerConfig.default -> SchedulerConfig {
+    return SchedulerConfig();
+}
+
+
+impl PendingAnalysis.postinit -> None {
+    if self.timestamp == 0 {
+        self.timestamp = time.time();
     }
 }
