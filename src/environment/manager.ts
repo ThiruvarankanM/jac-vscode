@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { validateJacExecutable, findInPath, findInCondaEnvs, findInWorkspace, findInHome } from '../utils/envLocators';
+import { validateJacExecutable, findInPath, findInCondaEnvs, findInWorkspace, findInHome } from '../utils/envDetection';
 import { getLspManager, createAndStartLsp } from '../extension';
 import { EnvCache } from './envCache';
 import { EnvWatcher } from './envWatcher';
