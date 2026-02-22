@@ -1,77 +1,188 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { findPythonEnvsWithJac, validateJacExecutable } from '../utils/envDetection';
+import { validateJacExecutable, findInPath, findInCondaEnvs, findInWorkspace, findInHome } from '../utils/envLocators';
 import { getLspManager, createAndStartLsp } from '../extension';
+import { EnvCache } from './envCache';
+import { EnvWatcher } from './envWatcher';
+import { buildQuickPickItem, showEnvironmentPrompt, showManualPathEntry, showFileBrowser } from './envPickerUI';
 
 export class EnvManager {
     private context: vscode.ExtensionContext;
     private statusBar: vscode.StatusBarItem;
-    private jacPath: string | undefined;
+    private jacPath: string | undefined;           // active jac executable path
+    private cachedPaths: string[] | undefined;     // all known jac paths (mem + disk)
+
+    // Per-locator promises — reused across QuickPick opens until invalidated
+    private pathPromise:      Promise<string[]> | undefined;  // $PATH search
+    private condaPromise:     Promise<string[]> | undefined;  // conda envs
+    private workspacePromise: Promise<string[]> | undefined;  // workspace .venv scan
+    private homePromise:      Promise<string[]> | undefined;  // ~/.virtualenvs etc.
+
+    private readonly cache: EnvCache;
+    private readonly watcher: EnvWatcher;
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined; // conda debounce
+    private lastDiscoveryAt = 0; // epoch ms — tracks when discovery last started
 
     constructor(context: vscode.ExtensionContext) {
-        this.context = context;
+        this.context   = context;
         this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.statusBar.command = 'jaclang-extension.selectEnv';
         context.subscriptions.push(this.statusBar);
+
+        this.cache = new EnvCache(context.globalStorageUri.fsPath);
+        this.watcher = new EnvWatcher({
+            onJacCreated:   (p) => this.onJacCreated(p),
+            onJacDeleted:   (p) => this.onJacDeleted(p),
+            onCondaChanged: ()  => this.scheduleRefresh(),
+        });
+        context.subscriptions.push({ dispose: () => this.watcher.dispose() });
+
+        // Start discovery immediately — mirrors Python ext's "pet" server which starts
+        // scanning at construction time, well before init() is awaited by the caller.
+        this.startBackgroundDiscovery();
     }
 
-
     async init() {
-        // TODO: workspaceState
+        // TODO: workspaceState — store per-workspace, fall back to globalState for shared envs
         this.jacPath = this.context.globalState.get<string>('jacEnvPath');
 
-        // Always show status bar immediately, even before environment detection
-        this.updateStatusBar();
+        const loaded = await this.cache.load();
+        if (loaded) { this.cachedPaths = loaded; }
 
-        await this.validateAndClearIfInvalid();  // Validate and clear if invalid
+        this.context.subscriptions.push(
+            vscode.workspace.onDidChangeWorkspaceFolders(() => {
+                this.invalidateAll();
+                this.cachedPaths = undefined;
+                this.watcher.start();
+                this.startBackgroundDiscovery();
+            })
+        );
+
+        await this.validateAndClearIfInvalid();
+
+        this.watcher.start();
+        // Discovery already running from constructor — only restart if invalidated above.
+        if (!this.pathPromise) { this.startBackgroundDiscovery(); }
 
         if (!this.jacPath) {
-            // Don't await - let it run in background so status bar is immediately clickable
-            this.showEnvironmentPrompt();
+            this.handleEnvironmentPrompt(); // fire-and-forget
         }
 
         this.updateStatusBar();
     }
 
-    private async showEnvironmentPrompt() {
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-        const envs = await findPythonEnvsWithJac(workspaceRoot);
+    // ── Watcher callbacks ─────────────────────────────────────────────────────
 
-        // Unified handler - both cases with ternary
-        const isNoEnv = envs.length === 0;
-        const action = isNoEnv
-            ? await vscode.window.showWarningMessage(
-                'No Jac environments found. Install Jac to enable IntelliSense and language features.',
-                'Install Jac',
-                'Select Manually'
-            )
-            : await vscode.window.showInformationMessage(
-                'No Jac environment selected. Select one to enable IntelliSense.',
-                'Select Environment'
+    // Fires when a jac executable is written — the env is fully usable.
+    // 1 s grace period lets the package manager flush any remaining writes.
+    private onJacCreated(jacPath: string): void {
+        setTimeout(async () => {
+            if (this.cachedPaths?.includes(jacPath)) { return; }
+            this.cachedPaths = [...(this.cachedPaths ?? []), jacPath];
+            void this.cache.save(this.cachedPaths);
+            this.invalidateAll();
+
+            const item = buildQuickPickItem(jacPath);
+            const action = await vscode.window.showInformationMessage(
+                `New Jac environment detected: ${item.label}`,
+                'Use This Environment',
+                'Ignore'
             );
+            if (action === 'Use This Environment') {
+                this.jacPath = jacPath;
+                await this.context.globalState.update('jacEnvPath', jacPath);
+                this.updateStatusBar();
+                await this.restartLanguageServer();
+            }
+        }, 1000);
+    }
 
-        if (action === 'Install Jac') {
+    // Fires when a jac executable disappears — venv deleted or jac uninstalled.
+    private onJacDeleted(jacPath: string): void {
+        if (this.cachedPaths) {
+            this.cachedPaths = this.cachedPaths.filter(p => p !== jacPath);
+            void this.cache.save(this.cachedPaths);
+        }
+        this.invalidateAll();
+
+        if (this.jacPath === jacPath) {
+            this.jacPath = undefined;
+            void this.context.globalState.update('jacEnvPath', undefined);
+            this.updateStatusBar();
+            vscode.window.showWarningMessage(
+                'Active Jac environment was removed. Please select a new one.',
+                'Select Environment'
+            ).then(action => {
+                if (action === 'Select Environment') { void this.promptEnvironmentSelection(); }
+            });
+        }
+    }
+
+    // Debounced full re-scan — used for conda and other indirect env changes.
+    private scheduleRefresh(): void {
+        if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
+        this.refreshTimer = setTimeout(() => {
+            this.invalidateAll();   // clears all stale promises so the guard doesn't block fresh scan
+            this.cachedPaths  = undefined;
+            this.startBackgroundDiscovery();
+        }, 500);
+    }
+
+    // Clears all per-locator promises so the next QuickPick open re-runs discovery.
+    private invalidateAll(): void {
+        this.pathPromise      = undefined;
+        this.condaPromise     = undefined;
+        this.workspacePromise = undefined;
+        this.homePromise      = undefined;
+    }
+
+    // ── Background discovery ──────────────────────────────────────────────────
+
+    private startBackgroundDiscovery(): void {
+        if (this.pathPromise) { return; } // already running
+        this.lastDiscoveryAt = Date.now();
+        const workspaceRoots = vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [process.cwd()];
+
+        // Fire all 4 locators in parallel; update cachedPaths incrementally so the
+        // picker can show results as soon as the fastest locator (PATH, ~5ms) resolves.
+        this.pathPromise      = findInPath();
+        this.condaPromise     = findInCondaEnvs();
+        this.workspacePromise = Promise.all(workspaceRoots.map(r => findInWorkspace(r)))
+            .then(all => Array.from(new Set(all.flat())));
+        this.homePromise      = findInHome();
+
+        const accumulator = new Set<string>();
+        const updateCache = (paths: string[]) => {
+            paths.forEach(p => accumulator.add(p));
+            this.cachedPaths = Array.from(accumulator);
+        };
+        this.pathPromise.then(updateCache).catch(() => {});
+        this.condaPromise.then(updateCache).catch(() => {});
+        this.workspacePromise.then(updateCache).catch(() => {});
+        this.homePromise.then(r => { updateCache(r); void this.cache.save(this.cachedPaths!); }).catch(() => {});
+    }
+
+    // ── Env selection ─────────────────────────────────────────────────────────
+
+    private async handleEnvironmentPrompt(): Promise<void> {
+        const action = await showEnvironmentPrompt();
+        if (action === 'install') {
             vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
-        } else if (action === 'Select Manually' || action === 'Select Environment') {
+        } else if (action === 'select') {
             await this.promptEnvironmentSelection();
         }
     }
 
     getJacPath(): string {
-        if (this.jacPath) return this.jacPath;
-        // Fallback: try to find jac in PATH
+        if (this.jacPath) { return this.jacPath; }
         return process.platform === 'win32' ? 'jac.exe' : 'jac';
     }
 
     getPythonPath(): string {
         if (this.jacPath) {
-            // Convert jac path to python path (same directory)
             const jacDir = path.dirname(this.jacPath);
-            const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python';
-            return path.join(jacDir, pythonExecutable);
+            return path.join(jacDir, process.platform === 'win32' ? 'python.exe' : 'python');
         }
-        // Fallback: try to find python in PATH
         return process.platform === 'win32' ? 'python.exe' : 'python';
     }
 
@@ -79,7 +190,6 @@ export class EnvManager {
         return this.statusBar;
     }
 
-    //Validates the current environment and clears it if invalid
     private async validateAndClearIfInvalid(): Promise<void> {
         if (this.jacPath && !(await validateJacExecutable(this.jacPath))) {
             this.jacPath = undefined;
@@ -90,243 +200,125 @@ export class EnvManager {
 
     async promptEnvironmentSelection() {
         try {
-            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+            type Item = { label: string; description: string; env: string };
+            const staticItems: Item[] = [
+                { label: "$(add) Enter interpreter path...", description: "Manually specify the path to a Jac executable", env: "manual" },
+                { label: "$(folder-opened) Find...",          description: "Browse for Jac executable using file picker",      env: "browse" },
+            ];
 
-            await this.validateAndClearIfInvalid(); // Validate current environment before showing picker
-            // Instant environment discovery - no progress dialogs needed!
-            const envs = await findPythonEnvsWithJac(workspaceRoot);
+            const quickPick = vscode.window.createQuickPick<Item>();
+            quickPick.placeholder    = 'Searching for Jac environments...';
+            quickPick.matchOnDescription = true;
+            quickPick.matchOnDetail      = true;
+            quickPick.ignoreFocusOut     = true;
+            quickPick.busy = true;
+            quickPick.show();
 
-            const quickPickItems: Array<{
-                label: string;
-                description: string;
-                env: string;
-            }> = [];
+            // Validate active path in background — don't block showing the picker.
+            this.validateAndClearIfInvalid().then(() => this.updateStatusBar());
 
-            // Always add manual and browse options first
-            quickPickItems.push(
-                {
-                    label: "$(add) Enter interpreter path...",
-                    description: "Manually specify the path to a Jac executable",
-                    env: "manual"
-                },
-                {
-                    label: "$(folder-opened) Find...",
-                    description: "Browse for Jac executable using file picker",
-                    env: "browse"
-                }
-            );
+            const repaint = (paths: string[]) => {
+                quickPick.items = [...staticItems, ...paths.map(buildQuickPickItem)];
+            };
 
-            if (envs.length > 0) {
-                const pathPartsFromEnv = process.env.PATH?.split(path.delimiter) || [];
-
-                const detectedItems = envs.map(env => {
-                    const isGlobal = env === 'jac' || env === 'jac.exe' ||
-                        pathPartsFromEnv.some(dir => path.join(dir, path.basename(env)) === env);
-
-                    let displayName = '';
-
-                    if (isGlobal) {
-                        displayName = 'Jac';
-                    } else {
-                        // Check if it's in a conda environment
-                        if (env.includes('conda') || env.includes('miniconda') || env.includes('anaconda')) {
-                            const envMatch = env.match(/envs[\/\\]([^\/\\]+)/);
-                            displayName = envMatch ? `Jac (${envMatch[1]})` : 'Jac';
-                        }
-                        // All other environments (venv, local, etc.)
-                        else {
-                            const venvMatch = env.match(/([^\/\\]*(?:\.?venv|virtualenv)[^\/\\]*)/);
-                            if (venvMatch) {
-                                displayName = `Jac (${venvMatch[1]})`;
-                            } else {
-                                // For Windows: go up from Scripts folder to get environment name
-                                // For Unix: use the bin's parent directory name
-                                const dirPath = path.dirname(env);
-                                const parentDirName = path.basename(dirPath);
-
-                                if (parentDirName === 'Scripts' || parentDirName === 'bin') {
-                                    // Go up one more level to get the actual environment name
-                                    const envDirName = path.basename(path.dirname(dirPath));
-                                    displayName = `Jac (${envDirName})`;
-                                } else {
-                                    displayName = `Jac (${parentDirName})`;
-                                }
-                            }
-                        }
-                    }
-
-                    return {
-                        label: displayName,
-                        description: this.formatPathForDisplay(env),
-                        env: env
-                    };
-                });
-
-                quickPickItems.push(...detectedItems);
+            // Validate cached paths (fs.access, ~1-2 ms total) and show immediately.
+            const live = this.cachedPaths
+                ? (await Promise.all(this.cachedPaths.map(async p => (await validateJacExecutable(p)) ? p : null)))
+                    .filter((p): p is string => p !== null)
+                : [];
+            if (this.cachedPaths && live.length !== this.cachedPaths.length) {
+                this.cachedPaths = live;
+                void this.cache.save(live);
             }
+            repaint(live);
 
-            // Show QuickPick
-            const choice = await vscode.window.showQuickPick(quickPickItems, {
-                placeHolder: envs.length > 0 ? `Select Jac environment (${envs.length} found)` : 'Select Jac environment (none detected yet)',
-                matchOnDescription: true,
-                matchOnDetail: true,
-                ignoreFocusOut: true
+            // Reuse in-progress or recently-settled promises if < 30 s old — avoids
+            // discarding constructor-started work when the user opens the picker quickly.
+            // Beyond 30 s, invalidate so we catch anything FS watchers may have missed.
+            if (Date.now() - this.lastDiscoveryAt > 30_000) { this.invalidateAll(); }
+            this.startBackgroundDiscovery();
+
+            // Stream fresh results; only repaint when the set genuinely grows.
+            const discovered = new Set<string>(live);
+            const onFreshBatch = (paths: string[]) => {
+                const prev = discovered.size;
+                paths.forEach(p => discovered.add(p));
+                if (discovered.size !== prev) { repaint(Array.from(discovered)); }
+            };
+
+            const promises = [this.pathPromise, this.condaPromise, this.workspacePromise, this.homePromise]
+                .filter((p): p is Promise<string[]> => p !== undefined);
+            promises.forEach(p => p.then(onFreshBatch).catch(() => {}));
+
+            // Mark done + persist cache when all locators finish.
+            Promise.allSettled(promises).then(() => {
+                const envList = Array.from(discovered);
+                this.cachedPaths = envList;
+                void this.cache.save(envList);
+                quickPick.busy = false;
+                quickPick.placeholder = envList.length > 0
+                    ? `Select Jac environment (${envList.length} found)`
+                    : 'Select Jac environment (none detected)';
             });
 
-            if (!choice || choice.env === "manual" || choice.env === "browse") {
-                this.updateStatusBar();
+            const choice = await new Promise<Item | undefined>(resolve => {
+                const subs: vscode.Disposable[] = [];
+                const cleanup = () => subs.forEach(d => d.dispose());
+                subs.push(
+                    quickPick.onDidAccept(() => {
+                        resolve(quickPick.selectedItems[0]);
+                        quickPick.hide();
+                        cleanup();
+                    }),
+                    quickPick.onDidHide(() => {
+                        resolve(undefined);
+                        cleanup();
+                    }),
+                );
+            });
 
-                if (choice?.env === "manual") {
-                    await this.handleManualPathEntry();
-                } else if (choice?.env === "browse") {
-                    await this.handleFileBrowser();
-                }
+            if (!choice || choice.env === 'manual' || choice.env === 'browse') {
+                this.updateStatusBar();
+                if (choice?.env === 'manual')  { await this.handleManualEntry(); }
+                else if (choice?.env === 'browse') { await this.handleFileBrowse(); }
                 return;
             }
 
             this.jacPath = choice.env;
+            this.invalidateAll();
+            // Do NOT clear cachedPaths — the env list is still valid, only the active selection changed.
             await this.context.globalState.update('jacEnvPath', choice.env);
+            this.startBackgroundDiscovery();
             this.updateStatusBar();
-
-            // Show success message with path details
-            const displayPath = this.formatPathForDisplay(choice.env);
-            vscode.window.showInformationMessage(
-                `Selected Jac environment: ${choice.label}`,
-                { detail: `Path: ${displayPath}` }
-            );
-
-            // Restart language server to use new environment
             await this.restartLanguageServer();
         } catch (error: any) {
-            // Always update status bar even when there's an error
             this.updateStatusBar();
             vscode.window.showErrorMessage(`Error finding Jac environments: ${error.message || error}`);
         }
     }
 
 
-    /**
-     * Handles manual path entry for Jac executable
-     */
-    private async handleManualPathEntry() {
-        const manualPath = await vscode.window.showInputBox({
-            prompt: "Enter the path to the Jac executable",
-            placeHolder: "/path/to/jac or C:\\path\\to\\jac.exe",
-            validateInput: (value) => {
-                if (!value || value.trim().length === 0) {
-                    return "Path cannot be empty";
-                }
-                // Basic validation - check if it looks like a valid path
-                if (!path.isAbsolute(value) && !value.startsWith('~')) {
-                    return "Please enter an absolute path";
-                }
-                return null;
-            }
-        });
-
-        if (manualPath) {
-            const normalizedPath = manualPath.startsWith('~')
-                ? path.join(process.env.HOME || process.env.USERPROFILE || '', manualPath.slice(1))
-                : manualPath;
-
-            // Validate the entered path
-            if (await validateJacExecutable(normalizedPath)) {
-                this.jacPath = normalizedPath;
-                await this.context.globalState.update('jacEnvPath', normalizedPath);
-                this.updateStatusBar();
-
-                vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.formatPathForDisplay(normalizedPath)}`
-                );
-
-                await this.restartLanguageServer();
-            } else {
-                const retry = await vscode.window.showErrorMessage(
-                    `Invalid Jac executable: ${normalizedPath}`,
-                    "Retry",
-                    "Browse for File"
-                );
-
-                if (retry === "Retry") {
-                    await this.handleManualPathEntry();
-                } else if (retry === "Browse for File") {
-                    await this.handleFileBrowser();
-                }
-            }
-        }
+    private async handleManualEntry(): Promise<void> {
+        const result = await showManualPathEntry(p => validateJacExecutable(p));
+        if (!result)             { return; }
+        if (result === 'browse') { return this.handleFileBrowse(); }
+        await this.applySelectedPath(result);
     }
 
-    /**
-     * Handles file browser for selecting Jac executable
-     */
-    private async handleFileBrowser() {
-        const fileUri = await vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: false,
-            openLabel: "Select Jac Executable",
-            filters: process.platform === 'win32' ? {
-                'Executable Files': ['exe'],
-                'All Files': ['*']
-            } : {
-                'All Files': ['*']
-            },
-            defaultUri: vscode.Uri.file(process.env.HOME || process.env.USERPROFILE || '/'),
-            title: "Select Jac Executable"
-        });
-
-        if (fileUri && fileUri.length > 0) {
-            const selectedPath = fileUri[0].fsPath;
-
-            // Validate the selected file
-            if (await validateJacExecutable(selectedPath)) {
-                this.jacPath = selectedPath;
-                await this.context.globalState.update('jacEnvPath', selectedPath);
-                this.updateStatusBar();
-
-                vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.formatPathForDisplay(selectedPath)}`
-                );
-
-                await this.restartLanguageServer();
-            } else {
-                const retry = await vscode.window.showErrorMessage(
-                    `The selected file is not a valid Jac executable: ${selectedPath}`,
-                    "Try Again",
-                    "Enter Path Manually"
-                );
-
-                if (retry === "Try Again") {
-                    await this.handleFileBrowser();
-                } else if (retry === "Enter Path Manually") {
-                    await this.handleManualPathEntry();
-                }
-            }
-        }
+    private async handleFileBrowse(): Promise<void> {
+        const result = await showFileBrowser(p => validateJacExecutable(p));
+        if (!result)             { return; }
+        if (result === 'manual') { return this.handleManualEntry(); }
+        await this.applySelectedPath(result);
     }
 
-
-    /**
-     * Formats a file path for display in the quick pick, similar to VS Code Python extension
-     */
-    private formatPathForDisplay(envPath: string): string {
-        const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-
-        // Replace home directory with ~
-        if (homeDir && envPath.startsWith(homeDir)) {
-            return envPath.replace(homeDir, '~');
-        }
-
-        // For very long paths, show just the relevant parts
-        const pathParts = envPath.split(path.sep);
-        if (pathParts.length > 6) {
-            const start = pathParts.slice(0, 2).join(path.sep);
-            const end = pathParts.slice(-3).join(path.sep);
-            return `${start}${path.sep}...${path.sep}${end}`;
-        }
-
-        return envPath;
+    private async applySelectedPath(jacPath: string): Promise<void> {
+        this.jacPath = jacPath;
+        await this.context.globalState.update('jacEnvPath', jacPath);
+        this.updateStatusBar();
+        await this.restartLanguageServer();
     }
+
 
     updateStatusBar() {
         if (this.jacPath) {
@@ -347,19 +339,11 @@ export class EnvManager {
     private async restartLanguageServer(): Promise<void> {
         const lspManager = getLspManager();
         if (lspManager) {
-            // LSP exists: restart it
-            try {
-                await lspManager.restart();
-            } catch (error: any) {
-                vscode.window.showErrorMessage(`Failed to restart language server: ${error.message || error}`);
-            }
+            try { await lspManager.restart(); }
+            catch (error: any) { vscode.window.showErrorMessage(`Failed to restart language server: ${error.message || error}`); }
         } else {
-            // LSP doesn't exist: create and start it
-            try {
-                await createAndStartLsp(this, this.context);
-            } catch (error: any) {
-                vscode.window.showErrorMessage(`Failed to start language server: ${error.message || error}`);
-            }
+            try { await createAndStartLsp(this, this.context); }
+            catch (error: any) { vscode.window.showErrorMessage(`Failed to start language server: ${error.message || error}`); }
         }
     }
 }

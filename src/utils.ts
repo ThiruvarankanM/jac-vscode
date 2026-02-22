@@ -1,2 +1,2 @@
-export { findPythonEnvsWithJac, validateJacExecutable } from './utils/envDetection';
+export { findPythonEnvsWithJac, validateJacExecutable } from './utils/envLocators';
 export { runJacCommandForCurrentFile } from './utils/jacRunner';

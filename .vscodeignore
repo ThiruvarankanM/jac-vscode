@@ -2,3 +2,6 @@
 .gitignore
 vsc-extension-quickstart.md
 *.vsix
+src/**
+out/**
+*.map
