@@ -151,15 +151,17 @@ export class EnvManager {
             .then(all => Array.from(new Set(all.flat())));
         this.homePromise      = findInHome();
 
-        const accumulator = new Set<string>();
-        const updateCache = (paths: string[]) => {
-            paths.forEach(p => accumulator.add(p));
-            this.cachedPaths = Array.from(accumulator);
+        const seenPaths = new Set<string>();
+        const addToSeenPaths = (paths: string[]) => {
+            paths.forEach(p => seenPaths.add(p));
+            this.cachedPaths = Array.from(seenPaths);
         };
-        this.pathPromise.then(updateCache).catch(() => {});
-        this.condaPromise.then(updateCache).catch(() => {});
-        this.workspacePromise.then(updateCache).catch(() => {});
-        this.homePromise.then(r => { updateCache(r); void this.cache.save(this.cachedPaths!); }).catch(() => {});
+        this.pathPromise.then(addToSeenPaths).catch(() => {});
+        this.condaPromise.then(addToSeenPaths).catch(() => {});
+        this.workspacePromise.then(addToSeenPaths).catch(() => {});
+        // save to disk only after homePromise — it's the last (slowest) locator,
+        // so the cache written here reflects the most complete picture available.
+        this.homePromise.then(homePaths => { addToSeenPaths(homePaths); void this.cache.save(this.cachedPaths!); }).catch(() => {});
     }
 
     // ── Env selection ─────────────────────────────────────────────────────────
@@ -180,6 +182,7 @@ export class EnvManager {
 
     getPythonPath(): string {
         if (this.jacPath) {
+            // jac and python live in the same bin/ dir (e.g. .venv/bin/python)
             const jacDir = path.dirname(this.jacPath);
             return path.join(jacDir, process.platform === 'win32' ? 'python.exe' : 'python');
         }
@@ -222,15 +225,15 @@ export class EnvManager {
             };
 
             // Validate cached paths (fs.access, ~1-2 ms total) and show immediately.
-            const live = this.cachedPaths
+            const confirmedPaths = this.cachedPaths
                 ? (await Promise.all(this.cachedPaths.map(async p => (await validateJacExecutable(p)) ? p : null)))
                     .filter((p): p is string => p !== null)
                 : [];
-            if (this.cachedPaths && live.length !== this.cachedPaths.length) {
-                this.cachedPaths = live;
-                void this.cache.save(live);
+            if (this.cachedPaths && confirmedPaths.length !== this.cachedPaths.length) {
+                this.cachedPaths = confirmedPaths;
+                void this.cache.save(confirmedPaths);
             }
-            repaint(live);
+            repaint(confirmedPaths);
 
             // Reuse in-progress or recently-settled promises if < 30 s old — avoids
             // discarding constructor-started work when the user opens the picker quickly.
@@ -239,11 +242,11 @@ export class EnvManager {
             this.startBackgroundDiscovery();
 
             // Stream fresh results; only repaint when the set genuinely grows.
-            const discovered = new Set<string>(live);
+            const pickerPaths = new Set<string>(confirmedPaths);
             const onFreshBatch = (paths: string[]) => {
-                const prev = discovered.size;
-                paths.forEach(p => discovered.add(p));
-                if (discovered.size !== prev) { repaint(Array.from(discovered)); }
+                const prev = pickerPaths.size;
+                paths.forEach(p => pickerPaths.add(p));
+                if (pickerPaths.size !== prev) { repaint(Array.from(pickerPaths)); }
             };
 
             const promises = [this.pathPromise, this.condaPromise, this.workspacePromise, this.homePromise]
@@ -252,19 +255,19 @@ export class EnvManager {
 
             // Mark done + persist cache when all locators finish.
             Promise.allSettled(promises).then(() => {
-                const envList = Array.from(discovered);
-                this.cachedPaths = envList;
-                void this.cache.save(envList);
+                const finalPaths = Array.from(pickerPaths);
+                this.cachedPaths = finalPaths;
+                void this.cache.save(finalPaths);
                 quickPick.busy = false;
-                quickPick.placeholder = envList.length > 0
-                    ? `Select Jac environment (${envList.length} found)`
+                quickPick.placeholder = finalPaths.length > 0
+                    ? `Select Jac environment (${finalPaths.length} found)`
                     : 'Select Jac environment (none detected)';
             });
 
             const choice = await new Promise<Item | undefined>(resolve => {
-                const subs: vscode.Disposable[] = [];
-                const cleanup = () => subs.forEach(d => d.dispose());
-                subs.push(
+                const pickerDisposables: vscode.Disposable[] = [];
+                const cleanup = () => pickerDisposables.forEach(d => d.dispose());
+                pickerDisposables.push(
                     quickPick.onDidAccept(() => {
                         resolve(quickPick.selectedItems[0]);
                         quickPick.hide();
@@ -301,14 +304,14 @@ export class EnvManager {
     private async handleManualEntry(): Promise<void> {
         const result = await showManualPathEntry(p => validateJacExecutable(p));
         if (!result)             { return; }
-        if (result === 'browse') { return this.handleFileBrowse(); }
+        if (result === 'browse') { return this.handleFileBrowse(); } // user chose 'Browse' from the error retry dialog
         await this.applySelectedPath(result);
     }
 
     private async handleFileBrowse(): Promise<void> {
         const result = await showFileBrowser(p => validateJacExecutable(p));
         if (!result)             { return; }
-        if (result === 'manual') { return this.handleManualEntry(); }
+        if (result === 'manual') { return this.handleManualEntry(); } // user chose 'Enter manually' from the error retry dialog
         await this.applySelectedPath(result);
     }
 
@@ -339,9 +342,11 @@ export class EnvManager {
     private async restartLanguageServer(): Promise<void> {
         const lspManager = getLspManager();
         if (lspManager) {
+            // LSP already running — just restart with the new env
             try { await lspManager.restart(); }
             catch (error: any) { vscode.window.showErrorMessage(`Failed to restart language server: ${error.message || error}`); }
         } else {
+            // First-time start (e.g. user picked an env before LSP was created)
             try { await createAndStartLsp(this, this.context); }
             catch (error: any) { vscode.window.showErrorMessage(`Failed to start language server: ${error.message || error}`); }
         }

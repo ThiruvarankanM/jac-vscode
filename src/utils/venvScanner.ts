@@ -2,10 +2,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import type { Dirent } from 'fs';
-import { fileExists, getJacInVenv } from './fsUtils';
+import { fileExists, getJacInVenv } from './envUtils';
 
 export const WALK_DEPTH_WORKSPACE = 3;
-const WALK_DIR_BUDGET = 80;
+const WALK_DIR_BUDGET = 80; // max dirs visited per walk (prevents runaway scans in large repos)
 
 const SKIP_DIRS = new Set([
     'node_modules', '.git', '__pycache__', 'site-packages',
@@ -23,12 +23,12 @@ export async function scanVenvManagerRoot(managerDir: string): Promise<string[]>
     try { entries = await fs.readdir(managerDir, { withFileTypes: true }); }
     catch { return []; }
 
-    const subDirs = entries.filter(e => e.isDirectory()).map(e => path.join(managerDir, e.name));
-    const results = await Promise.all(subDirs.map(async (d) => {
-        const isVenv = await fileExists(path.join(d, 'pyvenv.cfg'));
-        return isVenv ? getJacInVenv(d) : null;
+    const subDirs   = entries.filter(e => e.isDirectory()).map(e => path.join(managerDir, e.name));
+    const jacPaths  = await Promise.all(subDirs.map(async (venvDir) => {
+        const isVenv = await fileExists(path.join(venvDir, 'pyvenv.cfg'));
+        return isVenv ? getJacInVenv(venvDir) : null;
     }));
-    return results.filter((p): p is string => p !== null);
+    return jacPaths.filter((p): p is string => p !== null);
 }
 
 /**
@@ -40,9 +40,10 @@ export async function scanToolsDir(toolsDir: string): Promise<string[]> {
     try { entries = await fs.readdir(toolsDir, { withFileTypes: true }); }
     catch { return []; }
 
-    const subDirs = entries.filter(e => e.isDirectory()).map(e => path.join(toolsDir, e.name));
-    const results = await Promise.all(subDirs.map(d => getJacInVenv(d)));
-    return results.filter((p): p is string => p !== null);
+    const subDirs  = entries.filter(e => e.isDirectory()).map(e => path.join(toolsDir, e.name));
+    // no pyvenv.cfg guard here — tool dirs (e.g. uv tools/jaclang) skip the cfg
+    const jacPaths = await Promise.all(subDirs.map(venvDir => getJacInVenv(venvDir)));
+    return jacPaths.filter((p): p is string => p !== null);
 }
 
 /**
@@ -56,27 +57,27 @@ export async function scanPythonInstallDir(installDir: string): Promise<string[]
     catch { return []; }
 
     const subDirs = entries.filter(e => e.isDirectory()).map(e => path.join(installDir, e.name));
-    const results = await Promise.all(subDirs.map(async (versionDir) => {
-        const found: string[] = [];
+    const versionJacPaths = await Promise.all(subDirs.map(async (versionDir) => {
+        const jacPathsForVersion: string[] = [];
 
         // Direct install: e.g. ~/.pyenv/versions/3.11.0/bin/jac
-        const direct = await getJacInVenv(versionDir);
-        if (direct) { found.push(direct); }
+        const directJacPath = await getJacInVenv(versionDir);
+        if (directJacPath) { jacPathsForVersion.push(directJacPath); }
 
         // pyenv-virtualenv: <version>/envs/<name>/bin/jac
         try {
-            const envsDir    = path.join(versionDir, 'envs');
-            const envEntries = await fs.readdir(envsDir, { withFileTypes: true });
-            const nested = await Promise.all(
+            const envsDir           = path.join(versionDir, 'envs');
+            const envEntries        = await fs.readdir(envsDir, { withFileTypes: true });
+            const virtualenvJacPaths = await Promise.all(
                 envEntries.filter(e => e.isDirectory())
                           .map(e => getJacInVenv(path.join(envsDir, e.name)))
             );
-            found.push(...nested.filter((p): p is string => p !== null));
+            jacPathsForVersion.push(...virtualenvJacPaths.filter((p): p is string => p !== null));
         } catch { /* envs/ doesn't exist for plain Python versions — normal */ }
 
-        return found;
+        return jacPathsForVersion;
     }));
-    return results.flat();
+    return versionJacPaths.flat();
 }
 
 /**
@@ -172,11 +173,11 @@ export async function walkForVenvs(
     catch { return []; }
 
     const dirs = entries.filter(e => e.isDirectory() && !SKIP_DIRS.has(e.name));
-    budget.remaining -= dirs.length;
+    budget.remaining -= dirs.length; // deduct before recursing to keep the budget shared across all levels
 
     const results = await Promise.all(dirs.map(async (entry) => {
         const fullPath = path.join(baseDir, entry.name);
-        const isVenv   = await fileExists(path.join(fullPath, 'pyvenv.cfg'));
+        const isVenv   = await fileExists(path.join(fullPath, 'pyvenv.cfg')); // presence of pyvenv.cfg = valid venv root
         if (isVenv) {
             const found = await getJacInVenv(fullPath);
             return found ? [found] : [];

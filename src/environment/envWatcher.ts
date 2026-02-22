@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { getKnownPaths } from '../utils/platformPaths';
+import { getKnownPaths } from '../utils/envUtils';
 
 export type EnvWatcherCallbacks = {
     /** Called ~1 s after a new `jac` binary appears on disk. */
@@ -59,12 +59,12 @@ export class EnvWatcher {
             // We then create a pinpoint watcher for that specific venv's bin/jac,
             // which is also in an existing directory — so it fires the instant pip
             // drops the binary, regardless of the deep-glob latency.
-            const cfgW = vscode.workspace.createFileSystemWatcher(
+            const pyvenvCfgWatcher = vscode.workspace.createFileSystemWatcher(
                 new vscode.RelativePattern(folder, '*/pyvenv.cfg')
             );
             this.disposables.push(
-                cfgW,
-                cfgW.onDidCreate(uri => this.watchNewVenvForJac(path.dirname(uri.fsPath))),
+                pyvenvCfgWatcher,
+                pyvenvCfgWatcher.onDidCreate(uri => this.watchNewVenvForJac(path.dirname(uri.fsPath))),
             );
         }
     }
@@ -81,19 +81,19 @@ export class EnvWatcher {
         const jacExe = process.platform === 'win32' ? 'jac.exe' : 'jac';
         const binUri = vscode.Uri.file(path.join(venvDir, subDir));
 
-        const w = vscode.workspace.createFileSystemWatcher(
+        const jacBinaryWatcher = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern(binUri, jacExe)
         );
 
         const cleanup = () => {
-            clearTimeout(guard);
-            w.dispose();
+            clearTimeout(leakGuardTimer);
+            jacBinaryWatcher.dispose();
         };
-        const guard = setTimeout(cleanup, 60 * 60 * 1000); // 1-hour leak guard
+        const leakGuardTimer = setTimeout(cleanup, 60 * 60 * 1000); // 1-hour leak guard
 
-        this.disposables.push(w, { dispose: cleanup });
+        this.disposables.push(jacBinaryWatcher, { dispose: cleanup });
 
-        w.onDidCreate(uri => {
+        jacBinaryWatcher.onDidCreate(uri => {
             cleanup();
             this.callbacks.onJacCreated(uri.fsPath);
         });
@@ -123,16 +123,16 @@ export class EnvWatcher {
         }
 
         // Conda: environments.txt is rewritten whenever a conda env is created/removed.
-        const condaW = vscode.workspace.createFileSystemWatcher(
+        const condaEnvsWatcher = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern(
                 vscode.Uri.file(path.join(homeDir, '.conda')),
                 'environments.txt'
             )
         );
         this.disposables.push(
-            condaW,
-            condaW.onDidCreate(() => this.callbacks.onCondaChanged()),
-            condaW.onDidChange(() => this.callbacks.onCondaChanged()),
+            condaEnvsWatcher,
+            condaEnvsWatcher.onDidCreate(() => this.callbacks.onCondaChanged()),
+            condaEnvsWatcher.onDidChange(() => this.callbacks.onCondaChanged()),
         );
     }
 

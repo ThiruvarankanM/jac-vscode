@@ -1,4 +1,38 @@
+import * as fs from 'fs/promises';
 import * as path from 'path';
+
+// ── Executable constants ──────────────────────────────────────────────────────
+
+export const JAC_EXECUTABLE_NIX = 'jac';
+export const JAC_EXECUTABLE_WIN = 'jac.exe';
+
+// ── Filesystem helpers ────────────────────────────────────────────────────────
+
+/**
+ * Returns `true` when the given path exists on disk (any file type).
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+    try { await fs.access(filePath, fs.constants.F_OK); return true; }
+    catch { return false; }
+}
+
+/**
+ * Resolves the `jac` executable inside a virtual-environment root.
+ * Checks `bin/jac` (Unix) and `Scripts/jac.exe` (Windows) in parallel.
+ * Returns the absolute path or `null` if neither exists.
+ */
+export async function getJacInVenv(venvPath: string): Promise<string | null> {
+    const nix = path.join(venvPath, 'bin',     JAC_EXECUTABLE_NIX);
+    const win = path.join(venvPath, 'Scripts',  JAC_EXECUTABLE_WIN);
+    // check both layouts in parallel rather than using a platform guard —
+    // cross-platform venvs (e.g. Docker mounts) may have either layout
+    const [nixOk, winOk] = await Promise.all([fileExists(nix), fileExists(win)]);
+    if (nixOk) { return nix; }
+    if (winOk) { return win; }
+    return null;
+}
+
+// ── Platform paths ────────────────────────────────────────────────────────────
 
 /** Common virtual-environment directory names probed at workspace root. */
 export const COMMON_VENV_NAMES = [
@@ -74,7 +108,7 @@ export function getKnownPaths(homeDir: string): KnownPaths {
         };
     }
 
-    // Linux — respect XDG base directories
+    // Linux — respect XDG base directories (falls back to ~/.local/share and ~/.cache)
     const xdgData  = process.env.XDG_DATA_HOME  ?? path.join(homeDir, '.local', 'share');
     const xdgCache = process.env.XDG_CACHE_HOME ?? path.join(homeDir, '.cache');
     return {

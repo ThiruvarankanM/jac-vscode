@@ -18,8 +18,8 @@ export class EnvCache {
     /** Reads and parses the cache. Returns `undefined` on first run or parse error. */
     async load(): Promise<string[] | undefined> {
         try {
-            const raw    = await fs.readFile(this.filePath, 'utf-8');
-            const parsed = JSON.parse(raw);
+            const rawJson = await fs.readFile(this.filePath, 'utf-8');
+            const parsed  = JSON.parse(rawJson);
             return Array.isArray(parsed) ? (parsed as string[]) : undefined;
         } catch { return undefined; }
     }

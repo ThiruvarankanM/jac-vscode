@@ -12,11 +12,11 @@ function formatPathForDisplay(envPath: string): string {
     if (homeDir && envPath.startsWith(homeDir)) {
         return envPath.replace(homeDir, '~');
     }
-    const parts = envPath.split(path.sep);
-    if (parts.length > 6) {
-        const start = parts.slice(0, 2).join(path.sep);
-        const end   = parts.slice(-3).join(path.sep);
-        return `${start}${path.sep}...${path.sep}${end}`;
+    const pathParts = envPath.split(path.sep);
+    if (pathParts.length > 6) {
+        const pathStart = pathParts.slice(0, 2).join(path.sep);
+        const pathEnd   = pathParts.slice(-3).join(path.sep);
+        return `${pathStart}${path.sep}...${path.sep}${pathEnd}`;
     }
     return envPath;
 }
@@ -34,18 +34,18 @@ export function buildQuickPickItem(env: string): { label: string; description: s
     if (isGlobal) {
         displayName = 'Jac';
     } else if (env.includes('conda') || env.includes('miniconda') || env.includes('anaconda')) {
-        const m = env.match(/envs[\/\\]([^\/\\]+)/);
-        displayName = m ? `Jac (${m[1]})` : 'Jac';
+        const condaEnvMatch = env.match(/envs[\/\\]([^\/\\]+)/);
+        displayName = condaEnvMatch ? `Jac (${condaEnvMatch[1]})` : 'Jac';
     } else {
         const venvMatch = env.match(/([^\/\\]*(?:\.?venv|virtualenv)[^\/\\]*)/);
         if (venvMatch) {
             displayName = `Jac (${venvMatch[1]})`;
         } else {
-            const dirPath = path.dirname(env);
-            const parent  = path.basename(dirPath);
-            displayName = (parent === 'Scripts' || parent === 'bin')
+            const dirPath       = path.dirname(env);
+            const parentDirName = path.basename(dirPath);
+            displayName = (parentDirName === 'Scripts' || parentDirName === 'bin')
                 ? `Jac (${path.basename(path.dirname(dirPath))})`
-                : `Jac (${parent})`;
+                : `Jac (${parentDirName})`;
         }
     }
     return { label: displayName, description: formatPathForDisplay(env), env };
@@ -94,14 +94,14 @@ export async function showManualPathEntry(
 
     if (!manualPath) { return undefined; }
 
-    const normalized = manualPath.startsWith('~')
+    const normalizedPath = manualPath.startsWith('~')
         ? path.join(process.env.HOME || process.env.USERPROFILE || '', manualPath.slice(1))
         : manualPath;
 
-    if (await validate(normalized)) { return normalized; }
+    if (await validate(normalizedPath)) { return normalizedPath; }
 
     const retry = await vscode.window.showErrorMessage(
-        `Invalid Jac executable: ${normalized}`,
+        `Invalid Jac executable: ${normalizedPath}`,
         'Retry',
         'Browse for File'
     );
@@ -109,6 +109,7 @@ export async function showManualPathEntry(
     if (retry === 'Browse for File') { return 'browse'; }
     return undefined;
 }
+
 
 // ── File browser ──────────────────────────────────────────────────────────────
 
