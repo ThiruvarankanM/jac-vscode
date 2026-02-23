@@ -30,46 +30,29 @@ async function getJacInVenv(venvPath: string): Promise<string | null> {
     return null;
 }
 
-/**
- * Asynchronously walks a directory structure to a specified depth looking for venvs with jac.
- * Optimized to limit depth and avoid unnecessary deep recursion for better performance.
- * @param baseDir The directory to start from.
- * @param depth The maximum depth to recurse (max 2 for workspace efficiency).
- * @returns A promise that resolves to an array of jac executable paths.
- */
+// Recursively walks baseDir up to depth levels, collecting jac executable paths.
+// Stops recursing into a directory once jac is found there.
 async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
     if (depth === 0) return [];
 
     let entries: import('fs').Dirent[];
-
     try {
         entries = await fs.readdir(baseDir, { withFileTypes: true });
-    } catch (error) {
-        // Silently ignore permission errors, common in deep scans
+    } catch {
         return [];
     }
 
-    // Filter to only directories early to avoid unnecessary processing
-    const directories = entries.filter(entry => entry.isDirectory());
-
-    const promises: Promise<string[] | string | null>[] = directories.map(async (entry) => {
-        const fullPath = path.join(baseDir, entry.name);
-
-        // Check if this directory contains jac
-        const foundJac = await getJacInVenv(fullPath);
-
-        // Only recurse if we have depth remaining and didn't find jac here
-        // This avoids deep searches in directories that already contain jac
-        if (depth > 1 && !foundJac) {
-            const deeperFinds = await walkForVenvs(fullPath, depth - 1);
-            return deeperFinds;
-        }
-
-        return foundJac ? [foundJac] : [];
-    });
-
-    const results = await Promise.all(promises);
-    return results.flat().filter(p => p !== null) as string[];
+    const results = await Promise.all(
+        entries
+            .filter(entry => entry.isDirectory())
+            .map(async (entry): Promise<string[]> => {
+                const fullPath = path.join(baseDir, entry.name);
+                const foundJac = await getJacInVenv(fullPath);
+                if (foundJac) { return [foundJac]; }
+                return depth > 1 ? walkForVenvs(fullPath, depth - 1) : [];
+            })
+    );
+    return results.flat();
 }
 
 // ── The four environment locators ───────────────────────────────────────────
@@ -81,14 +64,14 @@ async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
 // Usually the first to finish because PATH dirs are already in the OS cache.
 export async function findInPath(): Promise<string[]> {
     const jacExe = process.platform === 'win32' ? JAC_EXECUTABLE_WIN : JAC_EXECUTABLE_NIX;
-    const pathDirs = [...new Set(process.env.PATH?.split(path.delimiter) ?? [])];
-    const hits = await Promise.all(
-        pathDirs.map(async (dir) => {
-            const candidate = path.join(dir, jacExe);
-            return (await fileExists(candidate)) ? candidate : null;
+    const pathDirectories = [...new Set(process.env.PATH?.split(path.delimiter) ?? [])];
+    const searchResults = await Promise.all(
+        pathDirectories.map(async (directory) => {
+            const jacPath = path.join(directory, jacExe);
+            return (await fileExists(jacPath)) ? jacPath : null;
         })
     );
-    return hits.filter((p): p is string => p !== null);
+    return searchResults.filter((foundPath): foundPath is string => foundPath !== null);
 }
 
 // Locator 2 — finds conda environments.
@@ -104,7 +87,7 @@ export async function findInCondaEnvs(): Promise<string[]> {
     // environments.txt lists every conda env as an absolute path, one per line.
     try {
         const text = await fs.readFile(path.join(homeDir, '.conda', 'environments.txt'), 'utf-8');
-        envPaths.push(...text.split('\n').map(l => l.trim()).filter(Boolean));
+        envPaths.push(...text.split('\n').map(line => line.trim()).filter(Boolean));
     } catch { /* conda not installed or file absent — normal on first run */ }
 
     // Scan known conda install roots for envs/ subdirectory.
@@ -118,14 +101,14 @@ export async function findInCondaEnvs(): Promise<string[]> {
     const rootScans = await Promise.all(condaRoots.map(async (root) => {
         try {
             const entries = await fs.readdir(path.join(root, 'envs'), { withFileTypes: true });
-            return entries.filter(e => e.isDirectory()).map(e => path.join(root, 'envs', e.name));
+            return entries.filter(condaEntry => condaEntry.isDirectory()).map(condaEntry => path.join(root, 'envs', condaEntry.name));
         } catch { return []; }
     }));
     envPaths.push(...rootScans.flat());
 
     const deduped = [...new Set(envPaths)].slice(0, MAX_CONDA_ENVS);
-    const results = await Promise.all(deduped.map(p => getJacInVenv(p)));
-    return results.filter((p): p is string => p !== null);
+    const jacResults = await Promise.all(deduped.map(condaEnvPath => getJacInVenv(condaEnvPath)));
+    return jacResults.filter((jacPath): jacPath is string => jacPath !== null);
 }
 
 // Locator 3 — finds venvs inside the open workspace.
@@ -139,7 +122,7 @@ export async function findInWorkspace(workspaceRoot: string): Promise<string[]> 
     // Step 1 — check well-known names first.
     const fromCommon = (await Promise.all(
         COMMON_VENV_NAMES.map(name => getJacInVenv(path.join(workspaceRoot, name)))
-    )).filter((p): p is string => p !== null);
+    )).filter((foundPath): foundPath is string => foundPath !== null);
 
     if (fromCommon.length > 0) { return fromCommon; }
 
@@ -165,43 +148,16 @@ export async function findInHome(): Promise<string[]> {
     ];
 
     const results = await Promise.all(
-        venvStoreDirs.map(async (dir) => {
-            if (!(await directoryExists(dir))) return [];
-            return walkForVenvs(dir, WALK_DEPTH_VIRTUALENVS);
+        venvStoreDirs.map(async (storeDir) => {
+            if (!(await directoryExists(storeDir))) return [];
+            return walkForVenvs(storeDir, WALK_DEPTH_VIRTUALENVS);
         })
     );
     return results.flat();
 }
 
 
-/**
- * Finds all Python environments with the 'jac' executable.
- * Fast and optimized for instant results by limiting workspace search to 2 levels deep
- * and focusing on workspace-local environments similar to Python's VS Code extension.
- *
- * @param workspaceRoot The root directory of the workspace to scan. Defaults to the current working directory.
- * @returns A promise that resolves to a unique array of paths to 'jac' executables.
- */
-// Runs all four locators in parallel and deduplicates results.
-// Used as a convenience single-call discovery API.
-export async function findPythonEnvsWithJac(workspaceRoot: string = process.cwd()): Promise<string[]> {
-    const results = await Promise.allSettled([
-        findInPath(),
-        findInCondaEnvs(),
-        findInWorkspace(workspaceRoot),
-        findInHome(),
-    ]);
-
-    const allEnvs: string[] = [];
-    for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-            allEnvs.push(...result.value);
-        }
-    }
-    return [...new Set(allEnvs)];
-}
-
-// --- Utility Helpers ---
+// ── Utility Helpers ──────────────────────────────────────────────────────────
 
 async function fileExists(filePath: string): Promise<boolean> {
     try {
@@ -221,20 +177,14 @@ async function directoryExists(dirPath: string): Promise<boolean> {
     }
 }
 
-/**
- * Validates if a given Jac executable path is working.
- * @param jacPath The path to the Jac executable to validate.
- * @returns Promise<boolean> True if the executable exists and responds to --version.
- */
-// Checks that a jac executable exists on disk (~1 ms).
-// Previously we ran `jac --version` as a subprocess which took 200–500 ms
-// and visibly slowed down both cold start and every QuickPick open.
-// A simple file-existence check is enough — we just need to know it's there
-// before starting the LSP; we don't need the version string.
+// Checks that a jac executable exists on disk (~1 ms, no subprocess).
+// Previously ran `jac --version` which took 200–500 ms and visibly slowed
+// cold start and every QuickPick open. File existence is enough — we just
+// need to confirm it's there before handing the path to the LSP.
 export async function validateJacExecutable(jacPath: string): Promise<boolean> {
     if (path.isAbsolute(jacPath)) { return fileExists(jacPath); }
     // bare name (e.g. 'jac') — scan every $PATH dir in parallel
-    const pathDirs = process.env.PATH?.split(path.delimiter) ?? [];
-    const checks   = await Promise.all(pathDirs.map(dir => fileExists(path.join(dir, jacPath))));
-    return checks.some(Boolean);
+    const pathDirectories = process.env.PATH?.split(path.delimiter) ?? [];
+    const existenceChecks = await Promise.all(pathDirectories.map(directory => fileExists(path.join(directory, jacPath))));
+    return existenceChecks.some(Boolean);
 }

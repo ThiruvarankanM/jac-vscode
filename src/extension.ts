@@ -35,14 +35,14 @@ export async function createAndStartLsp(
 
 export async function activate(context: vscode.ExtensionContext) {
   try {
-    const envManager = new EnvManager(context);
+    envManager = new EnvManager(context);
     registerAllCommands(context, envManager);
     await envManager.init();
 
     setupVisualDebuggerWebview(context);
 
     const jacPath = envManager.getJacPath();
-    const isJacAvailable = await validateJacExecutable(jacPath); // Check if Jac is available before starting LSP
+    const isJacAvailable = await validateJacExecutable(jacPath);
 
     if (isJacAvailable) {
       try {
@@ -51,11 +51,6 @@ export async function activate(context: vscode.ExtensionContext) {
         console.error("LSP failed to start during activation:", error);
       }
     }
-
-    return {
-        getEnvManager: () => envManager,
-        getLspManager: () => lspManager
-    };
   } catch (error) {
     console.error("Extension activation error:", error);
   }

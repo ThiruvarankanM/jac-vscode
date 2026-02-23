@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { findInPath, findInCondaEnvs, findInWorkspace, findInHome, validateJacExecutable } from '../utils/envDetection';
+import { getJacVersion, compareJacVersions } from '../utils/envVersion';
 import { getLspManager, createAndStartLsp } from '../extension';
 import { EnvCache } from './envCache';
 
@@ -29,6 +30,14 @@ export class EnvManager {
     // the running promises or start a fresh scan when the user opens the picker.
     private lastDiscoveryAt = 0;
 
+    // The highest-version jac path found after background version reads complete.
+    private recommendedPath: string | undefined;
+
+    // Resolves when all locators + version reads are done.
+    // Awaited by autoSelectOnStartup so it applies the best env only once the
+    // full picture is known — same idea as Python ext's refreshPromise.
+    private recommendedPromise: Promise<void> | undefined;
+
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
         this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -46,7 +55,6 @@ export class EnvManager {
 
 
     async init() {
-        // TODO: workspaceState — per-workspace env, fall back to globalState
         this.jacPath = this.context.globalState.get<string>('jacEnvPath');
 
         const loaded = await this.cache.load();
@@ -56,10 +64,45 @@ export class EnvManager {
         await this.validateAndClearIfInvalid();
 
         if (!this.jacPath) {
-            this.showEnvironmentPrompt(); // fire-and-forget
+            // Fire-and-forget: wait for locators + version reads, then silently
+            // apply the highest-version env — same as Python ext's autoSelectInterpreter.
+            // Never blocks the QuickPick or extension startup.
+            this.autoSelectOnStartup();
         }
 
         this.updateStatusBar();
+    }
+
+    // Waits for all locators and version reads to settle, then silently applies
+    // the highest-version env. If the user picks manually before this resolves,
+    // the jacPath check acts as a cancellation guard — nothing happens.
+    // If no envs are found at all, shows an install prompt.
+    private async autoSelectOnStartup(): Promise<void> {
+        await this.recommendedPromise;
+
+        if (this.jacPath) { return; } // user already picked — nothing to do
+
+        const best = this.recommendedPath ?? this.cachedPaths?.[0];
+        if (!best) {
+            // No envs found at all — tell the user to install Jac.
+            const action = await vscode.window.showWarningMessage(
+                'No Jac environment found.',
+                'Install Jac',
+                'Enter Path Manually'
+            );
+            if (action === 'Install Jac') {
+                vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
+            } else if (action === 'Enter Path Manually') {
+                await this.handleManualPathEntry();
+            }
+            return;
+        }
+
+        // Silently apply the highest-version env.
+        this.jacPath = best;
+        await this.context.globalState.update('jacEnvPath', best);
+        this.updateStatusBar();
+        await this.restartLanguageServer();
     }
 
     // Starts all four locators at the same time. Each one updates cachedPaths
@@ -94,7 +137,23 @@ export class EnvManager {
         this.workspacePromise.then(merge).catch(() => {});
         // Save to disk only after the home locator finishes (it's the slowest)
         // so the file contains the most complete list for the next session.
-        this.homePromise.then(paths => { merge(paths); void this.cache.save(this.cachedPaths!); }).catch(() => {});
+        // recommendedPromise resolves after versions are read — autoSelectOnStartup awaits it.
+        this.recommendedPromise = this.homePromise.then(async (paths) => {
+            merge(paths);
+            void this.cache.save(this.cachedPaths!);
+            // Read versions from folder names (~1 ms each, no subprocess).
+            // Pick the highest as recommendedPath.
+            const allPaths = this.cachedPaths ?? [];
+            const versions = await Promise.all(allPaths.map(p => getJacVersion(p)));
+            let highestVersion: string | undefined;
+            allPaths.forEach((envPath, i) => {
+                const version = versions[i];
+                if (version && (!highestVersion || compareJacVersions(version, highestVersion) > 0)) {
+                    highestVersion = version;
+                    this.recommendedPath = envPath;
+                }
+            });
+        }).catch(() => {});
     }
 
     // Clears the locator promises so the next startBackgroundDiscovery() call
@@ -106,34 +165,7 @@ export class EnvManager {
         this.condaPromise     = undefined;
         this.workspacePromise = undefined;
         this.homePromise      = undefined;
-    }
-
-    private async showEnvironmentPrompt() {
-        // Await all background locators (already running from constructor).
-        // If cachedPaths is filled, this resolves immediately.
-        await Promise.allSettled([
-            this.pathPromise, this.condaPromise,
-            this.workspacePromise, this.homePromise,
-        ]);
-        const envs = this.cachedPaths ?? [];
-
-        const isNoEnv = envs.length === 0;
-        const action = isNoEnv
-            ? await vscode.window.showWarningMessage(
-                'No Jac environments found. Install Jac to enable IntelliSense and language features.',
-                'Install Jac',
-                'Select Manually'
-            )
-            : await vscode.window.showInformationMessage(
-                'No Jac environment selected. Select one to enable IntelliSense.',
-                'Select Environment'
-            );
-
-        if (action === 'Install Jac') {
-            vscode.env.openExternal(vscode.Uri.parse('https://www.jac-lang.org/learn/installation/'));
-        } else if (action === 'Select Manually' || action === 'Select Environment') {
-            await this.promptEnvironmentSelection();
-        }
+        this.recommendedPromise = undefined;
     }
 
     getJacPath(): string {
@@ -166,58 +198,67 @@ export class EnvManager {
         }
     }
 
-    // Turns a jac path into a QuickPick row.
-    // Shows "Jac" for a global install or "Jac (envName)" for a venv,
-    // mirroring how the Python extension labels its "Python 3.x ('envName')" items.
-    // Reference: src/client/interpreter/configuration/interpreterSelector/interpreterSelector.ts
-    private buildQuickPickItem(env: string): { label: string; description: string; env: string } {
+    // Parses a jac executable path into a human-readable env name and type.
+    // Used by both the picker rows and the picker title.
+    private parseEnvPath(env: string): { envName: string; envType: string } {
         const pathDirs = process.env.PATH?.split(path.delimiter) || [];
         const isGlobal = env === 'jac' || env === 'jac.exe' ||
             pathDirs.some(dir => path.join(dir, path.basename(env)) === env);
 
-        let displayName: string;
-        if (isGlobal) {
-            displayName = 'Jac';
-        } else if (env.includes('conda') || env.includes('miniconda') || env.includes('anaconda')) {
+        if (isGlobal) { return { envName: '', envType: 'Global' }; }
+        if (env.includes('conda') || env.includes('miniconda') || env.includes('anaconda')) {
             const m = env.match(/envs[\/\\]([^\/\\]+)/);
-            displayName = m ? `Jac (${m[1]})` : 'Jac';
-        } else {
-            const venvMatch = env.match(/([^\/\\]*(?:\.?venv|virtualenv)[^\/\\]*)/);
-            if (venvMatch) {
-                displayName = `Jac (${venvMatch[1]})`;
-            } else {
-                const parent = path.basename(path.dirname(env));
-                displayName = (parent === 'Scripts' || parent === 'bin')
-                    ? `Jac (${path.basename(path.dirname(path.dirname(env)))})`
-                    : `Jac (${parent})`;
-            }
+            return { envName: m ? m[1] : '', envType: 'Conda' };
         }
-        return { label: displayName, description: this.formatPathForDisplay(env), env };
+        const venvMatch = env.match(/([^\/\\]*(?:\.?venv|virtualenv)[^\/\\]*)/);
+        if (venvMatch) { return { envName: venvMatch[1], envType: 'Venv' }; }
+        const parent = path.basename(path.dirname(env));
+        const envName = (parent === 'Scripts' || parent === 'bin')
+            ? path.basename(path.dirname(path.dirname(env)))
+            : parent;
+        return { envName, envType: 'Venv' };
     }
 
-    // Opens the QuickPick right away and fills it in as results arrive:
-    //   1. Show the picker immediately (0 ms wait).
-    //   2. Paint any previously cached paths straight away.
-    //   3. As each locator finishes, add its results to the list.
-    //   4. When all locators are done, hide the spinner and update the count.
+    // Builds one picker row — single line:
+    //   Label:       "$(check) Jac 0.11.0 (.venv2)"
+    //   Description: "~/Documents/Test/.venv2/bin/jac  ·  Venv"
+    private buildEnvItem(env: string, version?: string, active?: boolean): vscode.QuickPickItem & { env: string } {
+        const { envName, envType } = this.parseEnvPath(env);
+        const versionStr  = version ? `Jac ${version}` : 'Jac';
+        const namePart    = envName ? ` (${envName})` : '';
+        const label       = `${active ? '$(check) ' : ''}${versionStr}${namePart}`;
+        const description = `${this.formatPathForDisplay(env)}  ·  ${envType}`;
+        return { label, description, env };
+    }
+
+    // Opens the QuickPick immediately and streams results in as locators finish.
+    // Items are arranged in three sections separated by VS Code's native separators:
     //
-    // The key change from before: we use createQuickPick() instead of
-    // showQuickPick(). showQuickPick() waits for all results before showing
-    // anything. createQuickPick() lets us stream results in as they arrive,
-    // same as Python extension does for its interpreter picker:
-    //   src/client/interpreter/configuration/interpreterSelector/interpreterSelector.ts
+    //   ── Recommended ──  highest version found (shown once versions are read)
+    //   ── Installed ────  all others, sorted by version descending
+    //   ── Add ──────────  Enter path + Browse (always at the bottom)
+    //
+    // The $(check) icon marks the currently active env so the user always
+    // knows what's selected without hunting through the list.
     async promptEnvironmentSelection() {
         try {
-            type Item = { label: string; description: string; env: string };
-            const staticItems: Item[] = [
+            // Items can be selectable env rows OR non-selectable separators.
+            // Separators carry no env field; VS Code prevents selecting them.
+            type EnvItem = vscode.QuickPickItem & { env: string };
+            type AnyItem = vscode.QuickPickItem & { env?: string };
+
+            const addItems: EnvItem[] = [
                 { label: '$(add) Enter interpreter path...', description: 'Manually specify the path to a Jac executable', env: 'manual' },
-                { label: '$(folder-opened) Find...',         description: 'Browse for Jac executable using file picker',  env: 'browse' },
+                { label: '$(folder-opened) Find...',         description: 'Browse for Jac executable using file picker',  env: 'browse'  },
             ];
 
-            const quickPick = vscode.window.createQuickPick<Item>();
+            const sep = (label: string): AnyItem =>
+                ({ label, kind: vscode.QuickPickItemKind.Separator });
+
+            const quickPick = vscode.window.createQuickPick<AnyItem>();
+            quickPick.title              = this.buildPickerTitle();
             quickPick.placeholder        = 'Searching for Jac environments...';
             quickPick.matchOnDescription = true;
-            quickPick.matchOnDetail      = true;
             quickPick.ignoreFocusOut     = true;
             quickPick.busy               = true;
             quickPick.show();
@@ -225,16 +266,66 @@ export class EnvManager {
             // Validate active path without blocking the picker open.
             this.validateAndClearIfInvalid().then(() => this.updateStatusBar());
 
+            // versionMap and recommendedPath are filled after all locators settle.
+            // The picker shows env rows immediately and repaints once versions arrive.
+            const versionMap = new Map<string, string>(); // jacPath → "X.Y.Z"
+            let recommendedPath: string | undefined;
+            let pickerDisposed = false;
+
+            // Rebuilds the full grouped item list from the current set of paths.
+            // Called on every new batch and again after version reads complete.
             const repaint = (paths: string[]) => {
-                quickPick.items = [...staticItems, ...paths.map(p => this.buildQuickPickItem(p))];
+                if (pickerDisposed) { return; }
+
+                // Sort by version descending so newest floats to the top of Installed.
+                // Envs with no version yet go after versioned ones, then alphabetically.
+                const sorted = [...paths].sort((a, b) => {
+                    const va = versionMap.get(a);
+                    const vb = versionMap.get(b);
+                    if (va && vb) { return compareJacVersions(vb, va); }
+                    if (va) { return -1; }
+                    if (vb) { return  1; }
+                    return a.localeCompare(b);
+                });
+
+                const items: AnyItem[] = [];
+
+                // Active section — always first, shows the currently selected env.
+                // Excluded from Recommended/Installed below to avoid duplication.
+                if (this.jacPath && paths.includes(this.jacPath)) {
+                    items.push(sep('Currently Active'));
+                    items.push(this.buildEnvItem(
+                        this.jacPath,
+                        versionMap.get(this.jacPath),
+                        true,
+                    ));
+                }
+
+                // Recommended section — highest version, only shown once versions are read.
+                if (recommendedPath && recommendedPath !== this.jacPath) {
+                    items.push(sep('Recommended'));
+                    items.push(this.buildEnvItem(
+                        recommendedPath,
+                        versionMap.get(recommendedPath),
+                        false,
+                    ));
+                }
+
+                // Remaining envs — sorted by version desc, no section label needed.
+                const otherPaths = sorted.filter(p => p !== recommendedPath && p !== this.jacPath);
+                for (const envPath of otherPaths) {
+                    items.push(this.buildEnvItem(envPath, versionMap.get(envPath), false));
+                }
+
+                // Add section — always last so it never distracts.
+                items.push(sep('Add'));
+                items.push(...addItems);
+
+                quickPick.items = items;
             };
 
-            // Show cached paths immediately. Each is checked with fs.access (~1 ms)
-            // to remove any that no longer exist (e.g. a deleted venv).
-            // If deletions are found, invalidateAll() forces a fresh scan so the
-            // old (stale) locator results don't add the deleted paths back.
-            // If nothing was deleted, we still refresh after 30 s in case we
-            // missed any changes (e.g. on a network drive).
+            // Show cached paths immediately (each validated with fs.access, ~1 ms).
+            // Stale entries (deleted venvs) are removed before display.
             const confirmedPaths = this.cachedPaths
                 ? (await Promise.all(this.cachedPaths.map(async p => (await validateJacExecutable(p)) ? p : null)))
                     .filter((p): p is string => p !== null)
@@ -242,8 +333,8 @@ export class EnvManager {
             if (this.cachedPaths && confirmedPaths.length !== this.cachedPaths.length) {
                 this.cachedPaths = confirmedPaths;
                 void this.cache.save(confirmedPaths);
-                // Stale entries found — force fresh discovery so settled promises
-                // with deleted paths don't replay into onFreshBatch below.
+                // Stale paths found — force fresh discovery so old locator results
+                // don't re-add the deleted envs in onFreshBatch below.
                 this.invalidateAll();
             } else if (Date.now() - this.lastDiscoveryAt > 30_000) {
                 this.invalidateAll();
@@ -262,36 +353,62 @@ export class EnvManager {
                 .filter((p): p is Promise<string[]> => p !== undefined);
             promises.forEach(p => p.then(onFreshBatch).catch(() => {}));
 
-            // Mark done + persist cache when all locators settle.
-            Promise.allSettled(promises).then(() => {
+            // Once all locators settle: persist cache, read versions (~1 ms each,
+            // folder-name only — no subprocess), repaint with version labels +
+            // Recommended section. Runs entirely after the picker is already visible.
+            Promise.allSettled(promises).then(async () => {
                 const finalPaths = Array.from(pickerPaths);
                 this.cachedPaths = finalPaths;
                 void this.cache.save(finalPaths);
                 quickPick.busy = false;
                 quickPick.placeholder = finalPaths.length > 0
-                    ? `Select Jac environment (${finalPaths.length} found)`
-                    : 'Select Jac environment (none detected)';
+                    ? `${finalPaths.length} environment${finalPaths.length > 1 ? 's' : ''} found`
+                    : 'No Jac environments detected';
+
+                const versionResults = await Promise.all(
+                    finalPaths.map(envPath => getJacVersion(envPath))
+                );
+
+                let highestVersion: string | undefined;
+                finalPaths.forEach((envPath, i) => {
+                    const version = versionResults[i];
+                    if (version) {
+                        versionMap.set(envPath, version);
+                        if (!highestVersion || compareJacVersions(version, highestVersion) > 0) {
+                            highestVersion = version;
+                            recommendedPath = envPath;
+                        }
+                    }
+                });
+
+                // Update title to show current env version now that we know it.
+                quickPick.title = this.buildPickerTitle(versionMap.get(this.jacPath ?? ''));
+
+                if (versionMap.size > 0) { repaint(finalPaths); }
             });
 
-            const choice = await new Promise<Item | undefined>(resolve => {
+            const choice = await new Promise<AnyItem | undefined>(resolve => {
                 const subs: vscode.Disposable[] = [];
-                const cleanup = () => subs.forEach(d => d.dispose());
+                const cleanup = () => { pickerDisposed = true; subs.forEach(d => d.dispose()); };
                 subs.push(
                     quickPick.onDidAccept(() => { resolve(quickPick.selectedItems[0]); quickPick.hide(); cleanup(); }),
                     quickPick.onDidHide(()   => { resolve(undefined); cleanup(); }),
                 );
             });
 
-            if (!choice || choice.env === 'manual' || choice.env === 'browse') {
+            // Separators have no env field — treat a separator click as a dismiss.
+            const envChoice = choice?.env ? (choice as EnvItem) : undefined;
+
+            if (!envChoice || envChoice.env === 'manual' || envChoice.env === 'browse') {
                 this.updateStatusBar();
-                if (choice?.env === 'manual') { await this.handleManualPathEntry(); }
-                else if (choice?.env === 'browse') { await this.handleFileBrowser(); }
+                if (envChoice?.env === 'manual') { await this.handleManualPathEntry(); }
+                else if (envChoice?.env === 'browse') { await this.handleFileBrowser(); }
                 return;
             }
 
-            this.jacPath = choice.env;
+            this.jacPath = envChoice.env;
             this.invalidateAll();
-            await this.context.globalState.update('jacEnvPath', choice.env);
+            await this.context.globalState.update('jacEnvPath', envChoice.env);
             this.startBackgroundDiscovery();
             this.updateStatusBar();
             await this.restartLanguageServer();
@@ -299,6 +416,16 @@ export class EnvManager {
             this.updateStatusBar();
             vscode.window.showErrorMessage(`Error finding Jac environments: ${error.message || error}`);
         }
+    }
+
+    // Builds the picker title. If the active env is known, shows its version and name.
+    // e.g. "Jac Environment  ·  currently: 0.10.5 (.venv2)"
+    private buildPickerTitle(activeVersion?: string): string {
+        if (!this.jacPath) { return 'Jac Environment'; }
+        const { envName }  = this.parseEnvPath(this.jacPath);
+        const versionPart  = activeVersion ? ` ${activeVersion}` : '';
+        const namePart     = envName ? ` (${envName})` : '';
+        return `Jac Environment  ·  currently:${versionPart}${namePart}`;
     }
 
 
@@ -333,13 +460,13 @@ export class EnvManager {
                 this.updateStatusBar();
 
                 vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.formatPathForDisplay(normalizedPath)}`
+                    `Jac environment set to: ${this.parseEnvPath(normalizedPath).envName}`
                 );
 
                 await this.restartLanguageServer();
             } else {
                 const retry = await vscode.window.showErrorMessage(
-                    `Invalid Jac executable: ${normalizedPath}`,
+                    'Invalid Jac executable.',
                     "Retry",
                     "Browse for File"
                 );
@@ -382,13 +509,13 @@ export class EnvManager {
                 this.updateStatusBar();
 
                 vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.formatPathForDisplay(selectedPath)}`
+                    `Jac environment set to: ${this.parseEnvPath(selectedPath).envName}`
                 );
 
                 await this.restartLanguageServer();
             } else {
                 const retry = await vscode.window.showErrorMessage(
-                    `The selected file is not a valid Jac executable: ${selectedPath}`,
+                    'Not a valid Jac executable.',
                     "Try Again",
                     "Enter Path Manually"
                 );
