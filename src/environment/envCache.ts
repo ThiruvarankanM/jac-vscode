@@ -17,6 +17,10 @@ export class EnvCache {
     }
 
     // Reads saved paths from disk. Returns undefined if file doesn't exist yet or is broken.
+    // Example (2nd VS Code open):
+    //   load() → ["/home/user/.venv/bin/jac", "/usr/local/bin/jac"]
+    // Example (1st ever open, file not created yet):
+    //   load() → undefined  (extension runs a fresh scan instead)
     async load(): Promise<string[] | undefined> {
         try {
             const raw = await fs.readFile(this.filePath, 'utf-8');
@@ -28,6 +32,10 @@ export class EnvCache {
     // Writes paths to disk. Called after the last (slowest) locator finishes
     // so the saved list is as complete as possible for the next session.
     // Safe to fail — the extension works fine without a cache.
+    // Example:
+    //   save(["/home/user/.venv/bin/jac", "/usr/local/bin/jac"])
+    //   → writes to jac-env-cache.json:
+    //     ["/home/user/.venv/bin/jac", "/usr/local/bin/jac"]
     async save(paths: string[]): Promise<void> {
         try {
             await fs.mkdir(path.dirname(this.filePath), { recursive: true });

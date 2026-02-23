@@ -6,6 +6,14 @@ import * as path from 'path';
 // "jaclang-X.Y.Z.dist-info" folder — no file read needed, ~1 ms.
 // Returns undefined if the version cannot be determined (e.g. global install
 // in an unusual location).
+// Example:
+//   getJacVersion("/home/user/.venv/bin/jac")
+//   → looks inside /home/user/.venv/lib/python3.12/site-packages/
+//   → finds folder "jaclang-0.11.0.dist-info"
+//   → returns "0.11.0"
+//
+//   getJacVersion("/usr/local/bin/jac")
+//   → /usr/local/lib/ has no jaclang dist-info → returns undefined
 export async function getJacVersion(jacPath: string): Promise<string | undefined> {
     try {
         // /path/to/.venv/bin/jac   → envRoot = /path/to/.venv
@@ -37,6 +45,10 @@ export async function getJacVersion(jacPath: string): Promise<string | undefined
 
 // Compares two version strings like "0.11.0" vs "0.9.2".
 // Returns positive if a > b, negative if a < b, 0 if equal.
+// Example:
+//   compareJacVersions("0.11.0", "0.9.2")  → positive  (0.11 > 0.9)
+//   compareJacVersions("0.9.2",  "0.11.0") → negative  (0.9 < 0.11)
+//   compareJacVersions("0.11.0", "0.11.0") → 0         (equal)
 export function compareJacVersions(a: string, b: string): number {
     const aParts = a.split('.').map(Number);
     const bParts = b.split('.').map(Number);

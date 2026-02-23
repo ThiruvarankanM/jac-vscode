@@ -20,6 +20,11 @@ const MAX_CONDA_ENVS = 30;
 // Looks for the jac binary inside a venv folder.
 // Checks both Unix (bin/jac) and Windows (Scripts/jac.exe) at the same time
 // so it works on both platforms without needing a platform-specific branch.
+// Example:
+//   getJacInVenv("/home/user/.venv")
+//   → checks /home/user/.venv/bin/jac       (Unix)
+//   → checks /home/user/.venv/Scripts/jac.exe (Windows)
+//   → returns "/home/user/.venv/bin/jac"  (if it exists), else null
 async function getJacInVenv(venvPath: string): Promise<string | null> {
     const nix = path.join(venvPath, 'bin',     JAC_EXECUTABLE_NIX);
     const win = path.join(venvPath, 'Scripts', JAC_EXECUTABLE_WIN);
@@ -31,6 +36,12 @@ async function getJacInVenv(venvPath: string): Promise<string | null> {
 
 // Recursively walks baseDir up to depth levels, collecting jac executable paths.
 // Stops recursing into a directory once jac is found there.
+// Example (depth=2, workspace = /home/user/project):
+//   /home/user/project/
+//     .venv/          → getJacInVenv finds jac here → [".venv/bin/jac"] ✓ stop
+//     custom-env/     → getJacInVenv finds jac here → ["custom-env/bin/jac"] ✓ stop
+//     src/            → no jac, depth>1 → recurse into src/
+//       nested-env/   → getJacInVenv finds jac → ["src/nested-env/bin/jac"] ✓
 async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
     if (depth === 0) return [];
 
@@ -61,6 +72,12 @@ async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
 
 // Locator 1 — scans every $PATH directory for a jac binary (~5 ms).
 // Usually the first to finish because PATH dirs are already in the OS cache.
+// Example:
+//   PATH = "/usr/local/bin:/usr/bin:/usr/sbin"
+//   → checks /usr/local/bin/jac  → exists  → included
+//   → checks /usr/bin/jac        → missing → skipped
+//   → checks /usr/sbin/jac       → missing → skipped
+//   → returns ["/usr/local/bin/jac"]
 export async function findInPath(): Promise<string[]> {
     const jacExe = process.platform === 'win32' ? JAC_EXECUTABLE_WIN : JAC_EXECUTABLE_NIX;
     const pathDirectories = [...new Set(process.env.PATH?.split(path.delimiter) ?? [])];
@@ -74,11 +91,16 @@ export async function findInPath(): Promise<string[]> {
 }
 
 // Locator 2 — finds conda environments.
-// Reads ~/.conda/environments.txt (one file read, ~1 ms) instead of running
-// `conda env list` which spawns a subprocess (~500 ms).
+// Reads ~/.conda/environments.txt (one file read, ~1 ms) instead of running `conda env list` which spawns a subprocess (~500 ms).
 // Falls back to scanning known conda install locations if the file is missing.
 // Same approach as Python extension:
 //   src/client/pythonEnvironments/common/environmentManagers/conda.ts
+// Example:
+//   ~/.conda/environments.txt contents:
+//     /home/user/miniconda3
+//     /home/user/miniconda3/envs/myenv
+//   → getJacInVenv("/home/user/miniconda3/envs/myenv") → "/home/user/miniconda3/envs/myenv/bin/jac"
+//   → returns ["/home/user/miniconda3/envs/myenv/bin/jac"]
 export async function findInCondaEnvs(): Promise<string[]> {
     const homeDir = process.env.HOME || process.env.USERPROFILE || '';
     const envPaths: string[] = [];
@@ -97,16 +119,24 @@ export async function findInCondaEnvs(): Promise<string[]> {
         '/opt/homebrew/Caskroom/miniforge/base',
         '/opt/homebrew/Caskroom/mambaforge/base',
     ];
+    // Scan each known conda root for its envs/ subdirectory.
+    // e.g. ~/miniconda3/envs/ → ["~/miniconda3/envs/myenv", "~/miniconda3/envs/base"]
     const rootScans = await Promise.all(condaRoots.map(async (root) => {
         try {
             const entries = await fs.readdir(path.join(root, 'envs'), { withFileTypes: true });
             return entries.filter(condaEntry => condaEntry.isDirectory()).map(condaEntry => path.join(root, 'envs', condaEntry.name));
         } catch { return []; }
     }));
+    
+    // Merge root-scan results into the environments.txt list collected above.
     envPaths.push(...rootScans.flat());
 
+    // Deduplicate (environments.txt and root scans can list the same env twice)
+    // then cap at MAX_CONDA_ENVS to avoid checking hundreds of stale entries.
     const deduped = [...new Set(envPaths)].slice(0, MAX_CONDA_ENVS);
+    // Check every candidate env for a jac binary — all in parallel (~1 ms each).
     const jacResults = await Promise.all(deduped.map(condaEnvPath => getJacInVenv(condaEnvPath)));
+    // Drop nulls — conda envs that don't have jaclang installed.
     return jacResults.filter((jacPath): jacPath is string => jacPath !== null);
 }
 
@@ -117,8 +147,17 @@ export async function findInCondaEnvs(): Promise<string[]> {
 //         This covers custom-named venvs while staying fast for the common case.
 // Same approach as Python extension:
 //   src/client/pythonEnvironments/common/environmentManagers/simplevirtualenvs.ts
+// Example (workspace = /home/user/project):
+//   Step 1: checks /home/user/project/.venv  → exists → returns [".venv/bin/jac"]
+//           (never reaches Step 2)
+//
+//   Step 1: checks .venv, venv, env, ...     → none exist
+//   Step 2: walkForVenvs("/home/user/project", depth=2)
+//           → finds /home/user/project/my-custom-env/bin/jac
+//           → returns ["my-custom-env/bin/jac"]
 export async function findInWorkspace(workspaceRoot: string): Promise<string[]> {
     // Step 1 — check well-known names first.
+    // e.g. workspace/.venv/bin/jac, workspace/venv/bin/jac, workspace/env/bin/jac ...
     const fromCommon = (await Promise.all(
         COMMON_VENV_NAMES.map(name => getJacInVenv(path.join(workspaceRoot, name)))
     )).filter((foundPath): foundPath is string => foundPath !== null);
@@ -135,6 +174,15 @@ export async function findInWorkspace(workspaceRoot: string): Promise<string[]> 
 // inside its store folder (e.g. ~/.virtualenvs/myenv/bin/jac).
 // Same approach as Python extension:
 //   src/client/pythonEnvironments/common/environmentManagers/simplevirtualenvs.ts
+// Example:
+//   ~/.virtualenvs/
+//     myenv/bin/jac   → found → included
+//     oldenv/bin/jac  → found → included
+//   ~/.local/pipx/venvs/
+//     jaclang/bin/jac → found → included
+//   → returns ["~/.virtualenvs/myenv/bin/jac",
+//              "~/.virtualenvs/oldenv/bin/jac",
+//              "~/.local/pipx/venvs/jaclang/bin/jac"]
 export async function findInHome(): Promise<string[]> {
     const homeDir = process.env.HOME || process.env.USERPROFILE;
     if (!homeDir) return [];
@@ -180,6 +228,10 @@ async function directoryExists(dirPath: string): Promise<boolean> {
 // Previously ran `jac --version` which took 200–500 ms and visibly slowed
 // cold start and every QuickPick open. File existence is enough — we just
 // need to confirm it's there before handing the path to the LSP.
+// Example:
+//   validateJacExecutable("/home/user/.venv/bin/jac") → true  (file exists)
+//   validateJacExecutable("/home/user/.venv/bin/jac") → false (venv was deleted)
+//   validateJacExecutable("jac")  → scans every $PATH dir → true if found anywhere
 export async function validateJacExecutable(jacPath: string): Promise<boolean> {
     if (path.isAbsolute(jacPath)) { return fileExists(jacPath); }
     // bare name (e.g. 'jac') — scan every $PATH dir in parallel
