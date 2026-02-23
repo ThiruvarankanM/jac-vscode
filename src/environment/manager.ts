@@ -9,12 +9,24 @@ export class EnvManager {
     private statusBar: vscode.StatusBarItem;
     private jacPath: string | undefined;
 
-    private cachedPaths: string[] | undefined;    // all known jac paths (mem + disk)
-    private pathPromise:      Promise<string[]> | undefined;
-    private condaPromise:     Promise<string[]> | undefined;
-    private workspacePromise: Promise<string[]> | undefined;
-    private homePromise:      Promise<string[]> | undefined;
+    // All jac paths found so far by the four locators combined.
+    // undefined = locators haven't run yet. [] = ran but found nothing.
+    private cachedPaths: string[] | undefined;
+
+    // One promise per locator, started in the constructor so scanning happens
+    // in the background while the extension loads. By the time the user opens
+    // the QuickPick the results are usually already available.
+    // Same idea as Python extension:
+    //   src/client/pythonEnvironments/base/locators/common/nativePythonFinder.ts
+    private pathPromise:      Promise<string[]> | undefined;  // $PATH search
+    private condaPromise:     Promise<string[]> | undefined;  // conda envs
+    private workspacePromise: Promise<string[]> | undefined;  // workspace venvs
+    private homePromise:      Promise<string[]> | undefined;  // ~/.virtualenvs etc.
+
     private readonly cache: EnvCache;
+
+    // When the current scan started (ms). Used to decide whether to reuse
+    // the running promises or start a fresh scan when the user opens the picker.
     private lastDiscoveryAt = 0;
 
     constructor(context: vscode.ExtensionContext) {
@@ -25,8 +37,10 @@ export class EnvManager {
 
         this.cache = new EnvCache(context.globalStorageUri.fsPath);
 
-        // Fire all locators immediately — discovery runs while extension activates.
-        // By the time the user opens QuickPick, results are already in cachedPaths.
+        // Start scanning for jac environments immediately while the extension
+        // loads, so results are ready before the user opens the QuickPick.
+        // Same as Python extension (nativePythonFinder.ts) which starts
+        // scanning in its constructor before activate() awaits it.
         this.startBackgroundDiscovery();
     }
 
@@ -48,6 +62,17 @@ export class EnvManager {
         this.updateStatusBar();
     }
 
+    // Starts all four locators at the same time. Each one updates cachedPaths
+    // as soon as it finishes so the QuickPick can show results as they arrive.
+    //
+    // If a scan is already in progress (pathPromise is set), skip — reuse
+    // the existing promises. Call invalidateAll() first to force a new scan.
+    //
+    // seenPaths starts empty every time so deleted envs are never carried over.
+    // Only paths that exist on disk right now end up in cachedPaths.
+    //
+    // Same approach as Python extension:
+    //   src/client/pythonEnvironments/base/locators/common/nativePythonFinder.ts
     private startBackgroundDiscovery(): void {
         if (this.pathPromise) { return; } // already running — reuse in-progress promises
         this.lastDiscoveryAt = Date.now();
@@ -67,9 +92,15 @@ export class EnvManager {
         this.pathPromise.then(merge).catch(() => {});
         this.condaPromise.then(merge).catch(() => {});
         this.workspacePromise.then(merge).catch(() => {});
+        // Save to disk only after the home locator finishes (it's the slowest)
+        // so the file contains the most complete list for the next session.
         this.homePromise.then(paths => { merge(paths); void this.cache.save(this.cachedPaths!); }).catch(() => {});
     }
 
+    // Clears the locator promises so the next startBackgroundDiscovery() call
+    // runs a completely fresh scan instead of reusing the old results.
+    // Called when the user picks an env, when a deleted env is detected,
+    // or when the last scan is older than 30 seconds.
     private invalidateAll(): void {
         this.pathPromise      = undefined;
         this.condaPromise     = undefined;
@@ -135,7 +166,10 @@ export class EnvManager {
         }
     }
 
-    // Builds a QuickPick item from a jac executable path.
+    // Turns a jac path into a QuickPick row.
+    // Shows "Jac" for a global install or "Jac (envName)" for a venv,
+    // mirroring how the Python extension labels its "Python 3.x ('envName')" items.
+    // Reference: src/client/interpreter/configuration/interpreterSelector/interpreterSelector.ts
     private buildQuickPickItem(env: string): { label: string; description: string; env: string } {
         const pathDirs = process.env.PATH?.split(path.delimiter) || [];
         const isGlobal = env === 'jac' || env === 'jac.exe' ||
@@ -161,7 +195,17 @@ export class EnvManager {
         return { label: displayName, description: this.formatPathForDisplay(env), env };
     }
 
-    // Opens the env picker immediately with cached paths, streaming fresh results as locators finish.
+    // Opens the QuickPick right away and fills it in as results arrive:
+    //   1. Show the picker immediately (0 ms wait).
+    //   2. Paint any previously cached paths straight away.
+    //   3. As each locator finishes, add its results to the list.
+    //   4. When all locators are done, hide the spinner and update the count.
+    //
+    // The key change from before: we use createQuickPick() instead of
+    // showQuickPick(). showQuickPick() waits for all results before showing
+    // anything. createQuickPick() lets us stream results in as they arrive,
+    // same as Python extension does for its interpreter picker:
+    //   src/client/interpreter/configuration/interpreterSelector/interpreterSelector.ts
     async promptEnvironmentSelection() {
         try {
             type Item = { label: string; description: string; env: string };
@@ -185,7 +229,12 @@ export class EnvManager {
                 quickPick.items = [...staticItems, ...paths.map(p => this.buildQuickPickItem(p))];
             };
 
-            // Paint confirmed cache paths immediately — zero wait on second open.
+            // Show cached paths immediately. Each is checked with fs.access (~1 ms)
+            // to remove any that no longer exist (e.g. a deleted venv).
+            // If deletions are found, invalidateAll() forces a fresh scan so the
+            // old (stale) locator results don't add the deleted paths back.
+            // If nothing was deleted, we still refresh after 30 s in case we
+            // missed any changes (e.g. on a network drive).
             const confirmedPaths = this.cachedPaths
                 ? (await Promise.all(this.cachedPaths.map(async p => (await validateJacExecutable(p)) ? p : null)))
                     .filter((p): p is string => p !== null)

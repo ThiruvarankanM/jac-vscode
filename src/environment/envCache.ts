@@ -1,15 +1,14 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-// Persistent on-disk JSON cache of known jac executable paths.
-// Survives VS Code restarts — on second open, QuickPick is instant.
-// Non-fatal: missing/corrupt cache just falls back to fresh discovery.
+// Saves and loads jac executable paths to disk so VS Code remembers them
+// between restarts. On the second open the QuickPick shows results instantly
+// because the list is read from this file before any scan runs.
 //
-// Cache file:
-//   globalStorageUri/
-//   |__ jac-env-cache.json   <-- JSON array of absolute jac paths
+// File: globalStorageUri/jac-env-cache.json  (a plain JSON array of paths)
+// If the file is missing or broken the extension just runs a fresh scan.
 //
-// Refer to Python's `environmentKnownCache.ts` for the equivalent.
+// Same idea as Python extension: src/client/environmentKnownCache.ts
 export class EnvCache {
     private readonly filePath: string;
 
@@ -17,7 +16,7 @@ export class EnvCache {
         this.filePath = path.join(storagePath, 'jac-env-cache.json');
     }
 
-    // Reads the cache. Returns undefined on first run or parse error.
+    // Reads saved paths from disk. Returns undefined if file doesn't exist yet or is broken.
     async load(): Promise<string[] | undefined> {
         try {
             const raw = await fs.readFile(this.filePath, 'utf-8');
@@ -26,7 +25,9 @@ export class EnvCache {
         } catch { return undefined; }
     }
 
-    // Writes paths to disk. Non-fatal if the write fails.
+    // Writes paths to disk. Called after the last (slowest) locator finishes
+    // so the saved list is as complete as possible for the next session.
+    // Safe to fail — the extension works fine without a cache.
     async save(paths: string[]): Promise<void> {
         try {
             await fs.mkdir(path.dirname(this.filePath), { recursive: true });
