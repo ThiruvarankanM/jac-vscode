@@ -127,7 +127,7 @@ export async function findInCondaEnvs(): Promise<string[]> {
             return entries.filter(condaEntry => condaEntry.isDirectory()).map(condaEntry => path.join(root, 'envs', condaEntry.name));
         } catch { return []; }
     }));
-    
+
     // Merge root-scan results into the environments.txt list collected above.
     envPaths.push(...rootScans.flat());
 
