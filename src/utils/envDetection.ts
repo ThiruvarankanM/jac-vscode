@@ -17,7 +17,6 @@ const WALK_DEPTH_VIRTUALENVS = 2;
 const MAX_CONDA_ENVS = 30;
 
 
-
 // Looks for the jac binary inside a venv folder.
 // Checks both Unix (bin/jac) and Windows (Scripts/jac.exe) at the same time
 // so it works on both platforms without needing a platform-specific branch.

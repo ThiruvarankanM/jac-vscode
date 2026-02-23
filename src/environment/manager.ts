@@ -67,7 +67,7 @@ export class EnvManager {
             // Fire-and-forget: wait for locators + version reads, then silently
             // apply the highest-version env — same as Python ext's autoSelectInterpreter.
             // Never blocks the QuickPick or extension startup.
-            this.autoSelectOnStartup();
+            void this.autoSelectOnStartup();
         }
 
         this.updateStatusBar();
@@ -232,11 +232,12 @@ export class EnvManager {
     }
 
     // Opens the QuickPick immediately and streams results in as locators finish.
-    // Items are arranged in three sections separated by VS Code's native separators:
+    // Items are arranged in sections separated by VS Code's native separators:
     //
-    //   ── Recommended ──  highest version found (shown once versions are read)
-    //   ── Installed ────  all others, sorted by version descending
-    //   ── Add ──────────  Enter path + Browse (always at the bottom)
+    //   ── Currently Active ──  the selected env (shown if a path is set)
+    //   ── Recommended ──────  highest-version env (shown once versions are read)
+    //   [all others, sorted by version descending]
+    //   ── Add ──────────────  Enter path + Browse (always at the bottom)
     //
     // The $(check) icon marks the currently active env so the user always
     // knows what's selected without hunting through the list.
@@ -459,8 +460,9 @@ export class EnvManager {
                 await this.context.globalState.update('jacEnvPath', normalizedPath);
                 this.updateStatusBar();
 
+                const { envName } = this.parseEnvPath(normalizedPath);
                 vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.parseEnvPath(normalizedPath).envName}`
+                    `Jac environment set to: ${envName || this.formatPathForDisplay(normalizedPath)}`
                 );
 
                 await this.restartLanguageServer();
@@ -508,8 +510,9 @@ export class EnvManager {
                 await this.context.globalState.update('jacEnvPath', selectedPath);
                 this.updateStatusBar();
 
+                const { envName } = this.parseEnvPath(selectedPath);
                 vscode.window.showInformationMessage(
-                    `Jac environment set to: ${this.parseEnvPath(selectedPath).envName}`
+                    `Jac environment set to: ${envName || this.formatPathForDisplay(selectedPath)}`
                 );
 
                 await this.restartLanguageServer();
