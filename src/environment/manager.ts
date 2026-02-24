@@ -57,14 +57,15 @@ export class EnvManager {
         // Environments found - silently select the best one (no popup)
         const bestEnv = await this.findBestEnvironment(envs);
         if (bestEnv) {
-            this.jacPath = bestEnv.path;
-            await this.context.globalState.update('jacEnvPath', bestEnv.path);
+            this.jacPath = bestEnv.env.path;
+            this.jacVersion = bestEnv.version;
+            await this.context.globalState.update('jacEnvPath', bestEnv.env.path);
             this.updateStatusBar();
         }
     }
 
-    // Find the environment with the highest version
-    private async findBestEnvironment(envs: JacEnvironment[]): Promise<JacEnvironment | undefined> {
+    // Find the environment with the highest version — returns env + its version (already computed, no extra call)
+    private async findBestEnvironment(envs: JacEnvironment[]): Promise<{ env: JacEnvironment; version: string | undefined } | undefined> {
         if (envs.length === 0) return undefined;
 
         const versions = await Promise.all(envs.map(env => getJacVersion(env.path)));
@@ -81,7 +82,7 @@ export class EnvManager {
             }
         }
 
-        return envs[bestIndex];
+        return { env: envs[bestIndex], version: versions[bestIndex] };
     }
 
     getJacPath(): string {
@@ -114,7 +115,7 @@ export class EnvManager {
 
     async promptEnvironmentSelection() {
         try {
-            // Validate current env first (in case it was deleted)
+            // Clear the saved env if it's no longer valid; QuickPick will discover fresh environments
             await this.validateAndClearIfInvalid();
 
             type EnvItem = vscode.QuickPickItem & { envPath?: string };
@@ -231,7 +232,7 @@ export class EnvManager {
             if (!this.jacPath && envs.length > 0) {
                 const bestEnv = await this.findBestEnvironment(envs);
                 if (bestEnv) {
-                    await this.selectEnvironment(bestEnv.path);
+                    await this.selectEnvironment(bestEnv.env.path);
                     return;
                 }
             }
@@ -278,15 +279,16 @@ export class EnvManager {
 
     private formatPath(envPath: string): string {
         const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+        let displayPath = envPath;
         if (homeDir && envPath.startsWith(homeDir)) {
-            return envPath.replace(homeDir, '~');
+            displayPath = '~' + envPath.slice(homeDir.length);
         }
 
-        const parts = envPath.split(path.sep);
+        const parts = displayPath.split(path.sep);
         if (parts.length > 6) {
             return `${parts.slice(0, 2).join(path.sep)}${path.sep}...${path.sep}${parts.slice(-3).join(path.sep)}`;
         }
-        return envPath;
+        return displayPath;
     }
 
     private async selectEnvironment(envPath: string): Promise<void> {
