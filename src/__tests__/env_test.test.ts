@@ -43,8 +43,8 @@ jest.mock('vscode', () => {
         window: {
             createStatusBarItem: () => statusBarItem,
             createQuickPick: jest.fn(() => mockQuickPick),
-            showWarningMessage: jest.fn(),
-            showInformationMessage: jest.fn(),
+            showWarningMessage: jest.fn().mockResolvedValue(undefined),
+            showInformationMessage: jest.fn().mockResolvedValue(undefined),
             showErrorMessage: jest.fn(),
             showQuickPick: jest.fn(),
             showInputBox: jest.fn(),
@@ -154,7 +154,7 @@ describe('EnvManager', () => {
             context.globalState.get.mockReturnValue('/invalid/jac');
             (envDetection.validateJacExecutable as jest.Mock).mockResolvedValue(false);
             (envDetection.discoverJacEnvironments as jest.Mock).mockResolvedValue([]);
-            (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
+            (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
             await envManager.init();
 
@@ -166,7 +166,7 @@ describe('EnvManager', () => {
         test('runs silentAutoSelect when no saved environment exists', async () => {
             context.globalState.get.mockReturnValue(undefined);
             (envDetection.discoverJacEnvironments as jest.Mock).mockResolvedValue([]);
-            (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
+            (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
             await envManager.init();
 
@@ -231,13 +231,13 @@ describe('EnvManager', () => {
             expect(context.globalState.update).toHaveBeenCalledWith('jacEnvPath', '/envs/a/bin/jac');
         });
 
-        test('shows a warning with Install/Select options when no environments are found', async () => {
+        test('shows a toast with Install/Select options when no environments are found', async () => {
             (envDetection.discoverJacEnvironments as jest.Mock).mockResolvedValue([]);
-            (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
+            (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
             await (envManager as any).silentAutoSelect();
 
-            expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+            expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
                 'No Jac environment found. Install Jac to enable IntelliSense.',
                 'Install Jac',
                 'Select Manually'
@@ -247,7 +247,7 @@ describe('EnvManager', () => {
 
         test('opens the install page when the user clicks "Install Jac"', async () => {
             (envDetection.discoverJacEnvironments as jest.Mock).mockResolvedValue([]);
-            (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Install Jac');
+            (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Install Jac');
 
             await (envManager as any).silentAutoSelect();
 
@@ -256,7 +256,7 @@ describe('EnvManager', () => {
 
         test('opens the environment picker when the user clicks "Select Manually"', async () => {
             (envDetection.discoverJacEnvironments as jest.Mock).mockResolvedValue([]);
-            (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Select Manually');
+            (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue('Select Manually');
             const spy = jest.spyOn(envManager as any, 'promptEnvironmentSelection').mockResolvedValue(undefined);
 
             await (envManager as any).silentAutoSelect();
