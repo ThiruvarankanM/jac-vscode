@@ -1,5 +1,14 @@
 import * as fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import * as path from 'path';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+// Maximum number of conda env paths to scan (avoids runaway I/O on large setups)
+const MAX_CONDA_ENVS_TO_SCAN = 30;
+
+// How many directory levels deep to search for venvs
+const VENV_WALK_DEPTH = 2;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -19,8 +28,9 @@ async function isVenv(dir: string): Promise<boolean> {
 
 // Looks for jac binary inside a venv/conda env folder
 async function getJacInEnv(envPath: string): Promise<string | null> {
-    const jacExe = process.platform === 'win32' ? 'jac.exe' : 'jac';
-    const binDir = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const isWin = process.platform === 'win32';
+    const jacExe = isWin ? 'jac.exe' : 'jac';
+    const binDir = isWin ? 'Scripts' : 'bin';
     const jacPath = path.join(envPath, binDir, jacExe);
     return (await fileExists(jacPath)) ? jacPath : null;
 }
@@ -29,7 +39,7 @@ async function getJacInEnv(envPath: string): Promise<string | null> {
 async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
     if (depth === 0) return [];
 
-    let entries: import('fs').Dirent[];
+    let entries: Dirent[];
     try {
         entries = await fs.readdir(baseDir, { withFileTypes: true });
     } catch {
@@ -55,7 +65,8 @@ async function walkForVenvs(baseDir: string, depth: number): Promise<string[]> {
 
 // Locator 1: Scans $PATH for jac
 async function findInPath(): Promise<string[]> {
-    const jacExe = process.platform === 'win32' ? 'jac.exe' : 'jac';
+    const isWin = process.platform === 'win32';
+    const jacExe = isWin ? 'jac.exe' : 'jac';
     const pathDirs = [...new Set(process.env.PATH?.split(path.delimiter) ?? [])];
     const results = await Promise.all(
         pathDirs.map(async dir => {
@@ -78,10 +89,9 @@ async function findInCondaEnvs(): Promise<string[]> {
         '/opt/miniconda3',
     ];
 
-    // Collect env paths from: environments.txt + known roots + base envs
     const envPaths: string[] = [];
 
-    // Read environments.txt
+    // Read environments.txt — conda's own registry of all known env paths
     try {
         const text = await fs.readFile(path.join(homeDir, '.conda', 'environments.txt'), 'utf-8');
         envPaths.push(...text.split('\n').map(line => line.trim()).filter(Boolean));
@@ -95,26 +105,28 @@ async function findInCondaEnvs(): Promise<string[]> {
         // Check envs/ subfolder
         try {
             const entries = await fs.readdir(path.join(root, 'envs'), { withFileTypes: true });
-            entries.filter(dirEntry => dirEntry.isDirectory()).forEach(dirEntry => found.push(path.join(root, 'envs', dirEntry.name)));
+            entries
+                .filter(dirEntry => dirEntry.isDirectory())
+                .forEach(dirEntry => found.push(path.join(root, 'envs', dirEntry.name)));
         } catch { /* no envs folder */ }
         return found;
     }));
     envPaths.push(...rootScans.flat());
 
-    // Dedupe, cap at 30, check for jac
-    const deduped = [...new Set(envPaths)].slice(0, 30);
+    // Dedupe, cap at MAX_CONDA_ENVS_TO_SCAN, check for jac
+    const deduped = [...new Set(envPaths)].slice(0, MAX_CONDA_ENVS_TO_SCAN);
     const jacResults = await Promise.all(deduped.map(getJacInEnv));
     return jacResults.filter((result): result is string => result !== null);
 }
 
-// Locator 3: Finds venvs in workspace (depth 2)
+// Locator 3: Finds venvs in workspace
 async function findInWorkspace(workspaceRoot: string): Promise<string[]> {
-    return walkForVenvs(workspaceRoot, 2);
+    return walkForVenvs(workspaceRoot, VENV_WALK_DEPTH);
 }
 
 // Locator 4: Finds venvs in home directory stores
 async function findInHome(): Promise<string[]> {
-    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
     if (!homeDir) return [];
 
     const stores = [
@@ -124,7 +136,7 @@ async function findInHome(): Promise<string[]> {
         path.join(homeDir, '.local', 'pipx', 'venvs'),
     ];
 
-    const results = await Promise.all(stores.map(dir => walkForVenvs(dir, 2)));
+    const results = await Promise.all(stores.map(dir => walkForVenvs(dir, VENV_WALK_DEPTH)));
     return results.flat();
 }
 
